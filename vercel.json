@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://REPLACE-WITH-YOUR-RENDER-URL.onrender.com/api/:path*"
+      "destination": "https://scheduledesk-1.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
