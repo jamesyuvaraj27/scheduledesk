@@ -1,0 +1,21 @@
+node_modules/
+dist/
+build/
+
+# Secrets — never commit the Neon connection string
+.env
+.env.local
+.env.*.local
+
+# Lockfiles are intentionally not shared between machines here: native
+# binaries (esbuild, rollup) are platform-specific, and a lockfile generated
+# on one OS can break `npm install` on another. Let each machine resolve its
+# own. Remove these two lines if the whole team is on the same OS and you'd
+# rather pin exact versions.
+package-lock.json
+
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

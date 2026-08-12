@@ -1,0 +1,30 @@
+{
+  "name": "scheduledesk",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "client",
+    "server"
+  ],
+  "scripts": {
+    "setup": "node scripts/clean-install.mjs",
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev --workspace=server\" \"npm run dev --workspace=client\"",
+    "build": "npm run build --workspace=server && npm run build --workspace=client",
+    "typecheck": "npm run typecheck --workspace=server && tsc -b client && npm run typecheck:test --workspace=client",
+    "test": "npm test --workspace=server && npm test --workspace=client",
+    "db:generate": "npm run db:generate --workspace=server",
+    "db:migrate": "npm run db:migrate --workspace=server",
+    "db:studio": "npm run db:studio --workspace=server",
+    "db:reset": "npm run db:reset --workspace=server"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "prisma": "6.19.3"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

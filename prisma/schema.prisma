@@ -1,0 +1,230 @@
+// ScheduleDesk — Prisma schema
+// Mirrors the data model in PLAN.md §5. DB starts empty — no seed data, ever.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Terms & timing ----------
+
+model AcademicTerm {
+  id        String   @id @default(cuid())
+  year      Int
+  semester  Int
+  label     String // e.g. "2026-27 / Sem I"
+  isActive  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  timeConfig         TimeConfig?
+  sectionSubjects    SectionSubject[]
+  sectionAssignments SectionAssignment[]
+  timetableEntries   TimetableEntry[]
+
+  @@index([isActive])
+}
+
+// One row per term. Everything about daily timing is editable here —
+// clock times for each period are computed by walking this config forward.
+model TimeConfig {
+  id                String   @id @default(cuid())
+  termId            String   @unique
+  term              AcademicTerm @relation(fields: [termId], references: [id], onDelete: Cascade)
+
+  startTime         String   // "08:00"
+  numPeriods        Int      @default(7)
+  periodDurationMin Int      @default(50)
+  breakAfterPeriod  Int      @default(2)   // break falls after this period number
+  breakDurationMin  Int      @default(15)
+  lunchAfterPeriod  Int      @default(5)   // lunch falls after this period number
+  lunchDurationMin  Int      @default(60)
+  workingDays       String[] @default(["MON", "TUE", "WED", "THU", "FRI", "SAT"])
+}
+
+// ---------- Academic structure ----------
+
+model Department {
+  id   String @id @default(cuid())
+  name String
+  code String @unique // ASCE, CSE, ECE, EEE, MECH, CIVIL
+
+  branches Branch[]
+  faculty  Faculty[]
+}
+
+model Branch {
+  id           String @id @default(cuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  name         String
+  code         String // AIML, CAI, CSM, CSD, CSE, ECE, MECH, EEE, CIVIL...
+
+  sections Section[]
+  subjects Subject[]
+
+  @@unique([departmentId, code])
+}
+
+// Every branch has at least one Section row, even if it has no real
+// divisions (e.g. a single "CSE" section) — keeps every query uniform.
+model Section {
+  id         String @id @default(cuid())
+  branchId   String
+  branch     Branch @relation(fields: [branchId], references: [id])
+  year       Int    // 1-4
+  name       String // "A", "B", or branch code itself if undivided
+  homeRoomId String?
+  homeRoom   Room?  @relation(fields: [homeRoomId], references: [id])
+
+  sectionSubjects    SectionSubject[]
+  sectionAssignments SectionAssignment[]
+  timetableEntries   TimetableEntry[]
+
+  @@unique([branchId, year, name])
+}
+
+model Room {
+  id       String  @id @default(cuid())
+  name     String  @unique
+  type     RoomType
+  capacity Int?
+
+  sectionsUsingAsHome Section[]
+  timetableEntries    TimetableEntry[]
+}
+
+enum RoomType {
+  CLASSROOM
+  LAB
+  LIBRARY
+  SEMINAR_HALL
+}
+
+// ---------- Faculty & subjects ----------
+
+model Faculty {
+  id           String  @id @default(cuid())
+  name         String
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  isActive     Boolean @default(true)
+
+  eligibleSubjects   FacultySubject[]
+  sectionAssignments SectionAssignment[]
+  timetableEntries   TimetableEntry[]
+}
+
+model Subject {
+  id       String      @id @default(cuid())
+  branchId String
+  branch   Branch      @relation(fields: [branchId], references: [id])
+  name     String
+  code     String      // short code shown in grid cells, e.g. "BDA", "ESIA"
+  type     SubjectType
+
+  eligibleFaculty    FacultySubject[]
+  sectionSubjects    SectionSubject[]
+  sectionAssignments SectionAssignment[]
+  timetableEntries   TimetableEntry[]
+
+  @@unique([branchId, code])
+}
+
+enum SubjectType {
+  THEORY
+  LAB
+}
+
+// Eligibility: which faculty CAN teach which subject (many-to-many)
+model FacultySubject {
+  facultyId String
+  faculty   Faculty @relation(fields: [facultyId], references: [id])
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  @@id([facultyId, subjectId])
+}
+
+// Curriculum config: required weekly hours per section per subject, per term
+model SectionSubject {
+  id              String  @id @default(cuid())
+  termId          String
+  term            AcademicTerm @relation(fields: [termId], references: [id])
+  sectionId       String
+  section         Section @relation(fields: [sectionId], references: [id])
+  subjectId       String
+  subject         Subject @relation(fields: [subjectId], references: [id])
+  weeklyTheoryHrs Int     @default(0)
+  weeklyLabHrs    Int     @default(0)
+
+  @@unique([termId, sectionId, subjectId])
+}
+
+// Locked-in Section -> Subject -> Faculty mapping for the term
+model SectionAssignment {
+  id        String  @id @default(cuid())
+  termId    String
+  term      AcademicTerm @relation(fields: [termId], references: [id])
+  sectionId String
+  section   Section @relation(fields: [sectionId], references: [id])
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+  facultyId String
+  faculty   Faculty @relation(fields: [facultyId], references: [id])
+
+  @@unique([termId, sectionId, subjectId])
+}
+
+// ---------- The actual timetable ----------
+
+enum EntryType {
+  THEORY
+  LAB
+  LIBRARY
+  SEMINAR
+  COUNSELING
+}
+
+enum DayOfWeek {
+  MON
+  TUE
+  WED
+  THU
+  FRI
+  SAT
+  SUN
+}
+
+// The placed cell(s). A lab occupies one row with periodSpan = 3;
+// everything else has periodSpan = 1. Faculty timetables are never
+// stored — they're derived by querying this table WHERE facultyId = X
+// across every section/year in the active term (see PLAN.md §4a).
+model TimetableEntry {
+  id          String    @id @default(cuid())
+  termId      String
+  term        AcademicTerm @relation(fields: [termId], references: [id])
+  sectionId   String
+  section     Section   @relation(fields: [sectionId], references: [id])
+  dayOfWeek   DayOfWeek
+  startPeriod Int
+  periodSpan  Int       @default(1) // 1 for theory/library/seminar/counseling, 3 for lab
+  entryType   EntryType
+
+  subjectId String?
+  subject   Subject? @relation(fields: [subjectId], references: [id])
+  facultyId String?
+  faculty   Faculty? @relation(fields: [facultyId], references: [id])
+  roomId    String?
+  room      Room?    @relation(fields: [roomId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([termId, sectionId, dayOfWeek])
+  @@index([termId, facultyId, dayOfWeek])
+  @@index([termId, roomId, dayOfWeek])
+}
