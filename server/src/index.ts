@@ -16,7 +16,17 @@ requireDatabaseUrl()
 const app = express()
 const PORT = Number(process.env.PORT ?? 4000)
 
-app.use(cors())
+// CORS_ORIGIN is a comma-separated allowlist (e.g. the Vercel frontend URL).
+// Unset = allow any origin, which keeps local dev working with no config.
+const allowedOrigins = process.env.CORS_ORIGIN?.split(",")
+  .map((o) => o.trim())
+  .filter(Boolean)
+
+app.use(
+  cors(
+    allowedOrigins?.length ? { origin: allowedOrigins } : { origin: true }
+  )
+)
 app.use(express.json())
 
 app.get("/api/health", (_req, res) => {

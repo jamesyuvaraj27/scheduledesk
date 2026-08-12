@@ -60,6 +60,7 @@ Don't commit or copy `node_modules` or `package-lock.json` between machines.
 | `npm run db:migrate` | Create/apply a migration |
 | `npm run db:studio` | Browse the database in Prisma Studio |
 | `npm run db:reset` | Drop and recreate all tables (destructive) |
+| `npm run db:deploy` | Apply pending migrations non-interactively (used by Render, not local dev) |
 
 ## Structure
 
@@ -98,6 +99,10 @@ scripts/   clean-install.mjs
 All eight phases are complete. **87 unit tests** (`npm test`) plus four integration
 scripts covering scheduling, importing, year reset and build status — see
 [server/test/README.md](./server/test/README.md).
+
+## Deployment
+
+Server on Render, client on Vercel. See [DEPLOYMENT.md](./DEPLOYMENT.md) for exact commands and dashboard settings.
 
 ## Design notes
 

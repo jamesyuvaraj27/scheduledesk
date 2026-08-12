@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: scheduledesk-api
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install && npm run db:generate --workspace=server && npm run build --workspace=server
+    preDeployCommand: npm run db:deploy --workspace=server
+    startCommand: npm run start --workspace=server
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
