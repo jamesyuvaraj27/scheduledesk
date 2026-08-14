@@ -31,7 +31,22 @@ async function req(method, path, body) {
 
 const created = { terms: [], depts: [], branches: [], sections: [], rooms: [], subjects: [], faculty: [] }
 
+/**
+ * The app allows exactly one active term, so this test has to make its own
+ * term active — which deactivates the real one. That MUST be put back, and a
+ * term can't be deleted while active, so cleanup has to restore first.
+ */
+let previouslyActiveTermId = null
+
 async function main() {
+  const before = await req("GET", "/terms")
+  previouslyActiveTermId = before.body.find((t) => t.isActive)?.id ?? null
+  console.log(
+    previouslyActiveTermId
+      ? `  (will restore active term ${previouslyActiveTermId} afterwards)`
+      : "  (no active term to restore)"
+  )
+
   console.log("\n— term with split morning/afternoon periods —")
   let r = await req("POST", "/terms", {
     year: 2099,
@@ -190,8 +205,22 @@ async function cleanup() {
   for (const id of created.branches) await req("DELETE", `/branches/${id}`)
   for (const id of created.depts) await req("DELETE", `/departments/${id}`)
   for (const id of created.rooms) await req("DELETE", `/rooms/${id}`)
+  // Restore the real active term BEFORE deleting ours — the API refuses to
+  // delete an active term, which is exactly how a test term got left behind
+  // and stranded the user's real one.
+  if (previouslyActiveTermId) {
+    const r = await req("POST", `/terms/${previouslyActiveTermId}/activate`)
+    console.log(
+      r.status === 200
+        ? `  restored active term ${previouslyActiveTermId}`
+        : `  WARNING: could not restore active term (${r.status})`
+    )
+  }
   for (const id of created.terms) {
-    await req("DELETE", `/terms/${id}`)
+    const r = await req("DELETE", `/terms/${id}`)
+    if (r.status !== 204 && r.status !== 200) {
+      console.log(`  WARNING: test term ${id} was NOT deleted (${r.status})`)
+    }
   }
   console.log("  cleaned up")
 }
