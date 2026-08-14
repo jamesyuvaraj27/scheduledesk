@@ -11,7 +11,8 @@ import {
 const CONFIG = {
   startTime: "08:00",
   numPeriods: 7,
-  periodDurationMin: 50,
+  morningPeriodDurationMin: 50,
+  afternoonPeriodDurationMin: 50,
   breakAfterPeriod: 2,
   breakDurationMin: 20,
   lunchAfterPeriod: 5,
@@ -104,10 +105,13 @@ describe("parsing the real sample sheet", () => {
     assert.equal(thu.filter((e) => e.code === "PE LAB").length, 1, "should be one block, not three")
   })
 
-  test("consecutive identical theory hours merge", () => {
-    // FRI has NPTEL(SWM) twice in a row -> flagged, split into single hours.
+  test("consecutive identical hours merge into one multi-period block", () => {
+    // FRI has NPTEL(SWM) twice in a row. Spans are free now, so it imports
+    // as a single 2-period block — with a warning, because the code doesn't
+    // read like a lab and the admin should confirm that's intended.
     const fri = result.entries.filter((e) => e.dayOfWeek === "FRI" && e.code === "NPTEL(SWM)")
-    assert.equal(fri.length, 2, "a 2-period run is split into two single hours")
+    assert.equal(fri.length, 1, "a 2-period run stays one block")
+    assert.equal(fri[0].periodSpan, 2)
     assert.ok(result.warnings.some((w) => w.includes("FRI") && w.includes("2 periods")))
   })
 

@@ -5,15 +5,15 @@ import type { GridSlot, Day } from "@/lib/types"
 
 /** The real 8:00-3:00 day: break after period 2, lunch after period 5. */
 const SLOTS: GridSlot[] = [
-  { kind: "PERIOD", period: 1, startTime: "08:00", endTime: "08:50" },
-  { kind: "PERIOD", period: 2, startTime: "08:50", endTime: "09:40" },
-  { kind: "BREAK", period: null, startTime: "09:40", endTime: "10:00" },
-  { kind: "PERIOD", period: 3, startTime: "10:00", endTime: "10:50" },
-  { kind: "PERIOD", period: 4, startTime: "10:50", endTime: "11:40" },
-  { kind: "PERIOD", period: 5, startTime: "11:40", endTime: "12:30" },
-  { kind: "LUNCH", period: null, startTime: "12:30", endTime: "13:20" },
-  { kind: "PERIOD", period: 6, startTime: "13:20", endTime: "14:10" },
-  { kind: "PERIOD", period: 7, startTime: "14:10", endTime: "15:00" },
+  { kind: "PERIOD", period: 1, startTime: "08:00", endTime: "08:50", durationMin: 50 },
+  { kind: "PERIOD", period: 2, startTime: "08:50", endTime: "09:40", durationMin: 50 },
+  { kind: "BREAK", period: null, startTime: "09:40", endTime: "10:00", durationMin: 20 },
+  { kind: "PERIOD", period: 3, startTime: "10:00", endTime: "10:50", durationMin: 50 },
+  { kind: "PERIOD", period: 4, startTime: "10:50", endTime: "11:40", durationMin: 50 },
+  { kind: "PERIOD", period: 5, startTime: "11:40", endTime: "12:30", durationMin: 50 },
+  { kind: "LUNCH", period: null, startTime: "12:30", endTime: "13:20", durationMin: 50 },
+  { kind: "PERIOD", period: 6, startTime: "13:20", endTime: "14:10", durationMin: 50 },
+  { kind: "PERIOD", period: 7, startTime: "14:10", endTime: "15:00", durationMin: 50 },
 ]
 
 interface E {

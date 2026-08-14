@@ -26,6 +26,8 @@ export function CrudSection<T extends { id: string }>({
   emptyHint,
   disabled,
   disabledHint,
+  toolbar,
+  headerAction,
 }: {
   title: string
   description?: string
@@ -42,6 +44,10 @@ export function CrudSection<T extends { id: string }>({
   emptyHint?: string
   disabled?: boolean
   disabledHint?: string
+  /** Filter controls rendered above the table. */
+  toolbar?: React.ReactNode
+  /** Extra button(s) beside "Add", e.g. a bulk-create action. */
+  headerAction?: React.ReactNode
 }) {
   const [open, setOpen] = React.useState(false)
   const [editing, setEditing] = React.useState<T | null>(null)
@@ -58,22 +64,28 @@ export function CrudSection<T extends { id: string }>({
           <CardTitle>{title}</CardTitle>
           {description && <CardDescription>{description}</CardDescription>}
         </div>
-        <Button
-          size="sm"
-          onClick={() => {
-            setEditing(null)
-            setOpen(true)
-          }}
-          disabled={disabled}
-        >
-          <Plus /> {addLabel}
-        </Button>
+        <div className="flex items-center gap-2">
+          {headerAction}
+          <Button
+            size="sm"
+            onClick={() => {
+              setEditing(null)
+              setOpen(true)
+            }}
+            disabled={disabled}
+          >
+            <Plus /> {addLabel}
+          </Button>
+        </div>
       </CardHeader>
 
       <CardContent className="space-y-3">
         {disabled && disabledHint && (
           <p className="text-sm text-muted-foreground">{disabledHint}</p>
         )}
+        {toolbar ? (
+          <div className="flex flex-wrap items-end gap-3">{toolbar}</div>
+        ) : null}
         {deleteError ? <ErrorState error={deleteError} /> : null}
 
         {isLoading ? (

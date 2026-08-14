@@ -38,6 +38,9 @@ export function SectionBuilderPage() {
   const [tool, setTool] = React.useState<Tool | null>(null)
   const [labRoomId, setLabRoomId] = React.useState<string>("")
   const [placeError, setPlaceError] = React.useState<unknown>(null)
+  // How many consecutive periods the next lab should cover. Labs are no
+  // longer a fixed 3 — the admin decides per placement.
+  const [labSpan, setLabSpan] = React.useState(3)
 
   const timetable = useQuery({
     queryKey: ["timetable", sectionId],
@@ -61,12 +64,22 @@ export function SectionBuilderPage() {
   // Ask the server where the current tool may legally go. This is what makes
   // the grid clash-blocked: invalid cells are dead before anyone clicks.
   const availability = useQuery({
-    queryKey: ["availability", sectionId, tool?.entryType, tool?.subjectId, labRoomId],
+    queryKey: [
+      "availability",
+      sectionId,
+      tool?.entryType,
+      tool?.subjectId,
+      labRoomId,
+      tool?.entryType === "LAB" ? labSpan : 1,
+    ],
     enabled: Boolean(tool),
     queryFn: () => {
       const params = new URLSearchParams({ entryType: tool!.entryType })
       if (tool!.subjectId) params.set("subjectId", tool!.subjectId)
-      if (tool!.entryType === "LAB" && labRoomId) params.set("roomId", labRoomId)
+      if (tool!.entryType === "LAB") {
+        params.set("periodSpan", String(labSpan))
+        if (labRoomId) params.set("roomId", labRoomId)
+      }
       return api.get<AvailabilityResponse>(
         `/sections/${sectionId}/availability?${params}`
       )
@@ -86,6 +99,7 @@ export function SectionBuilderPage() {
       entryType: EntryType
       subjectId?: string
       roomId?: string
+      periodSpan?: number
     }) => api.post(`/sections/${sectionId}/entries`, body),
     onSuccess: () => {
       setPlaceError(null)
@@ -151,6 +165,7 @@ export function SectionBuilderPage() {
       entryType: tool.entryType,
       subjectId: tool.subjectId,
       roomId: tool.entryType === "LAB" ? labRoomId : undefined,
+      periodSpan: tool.entryType === "LAB" ? labSpan : 1,
     })
   }
 
@@ -268,7 +283,22 @@ export function SectionBuilderPage() {
           )}
 
           {tool?.entryType === "LAB" && (
-            <div className="flex items-center gap-2 text-sm">
+            <div className="flex items-center gap-2 text-sm flex-wrap">
+              <span className="text-muted-foreground">Periods:</span>
+              <select
+                value={labSpan}
+                onChange={(e) => setLabSpan(Number(e.target.value))}
+                className="h-8 rounded-md border bg-background px-2 text-sm"
+              >
+                {Array.from(
+                  { length: timetable.data?.grid.numPeriods ?? 7 },
+                  (_, i) => i + 1
+                ).map((n) => (
+                  <option key={n} value={n}>
+                    {n} {n === 1 ? "period" : "periods"}
+                  </option>
+                ))}
+              </select>
               <span className="text-muted-foreground">Laboratory:</span>
               {labRooms.length === 0 ? (
                 <span className="text-warning">

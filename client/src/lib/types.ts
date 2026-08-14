@@ -19,11 +19,27 @@ export interface Branch {
   _count?: { sections: number; subjects: number }
 }
 
+export type Block = "A" | "L" | "V"
+export type Floor = "GF" | "FF" | "SF" | "TF" | "LF"
+
+export const BLOCKS: Block[] = ["A", "L", "V"]
+export const FLOORS: Floor[] = ["GF", "FF", "SF", "TF", "LF"]
+
+export const FLOOR_LABELS: Record<Floor, string> = {
+  GF: "Ground floor",
+  FF: "First floor",
+  SF: "Second floor",
+  TF: "Third floor",
+  LF: "Last floor",
+}
+
 export interface Room {
   id: string
   name: string
   type: RoomType
   capacity: number | null
+  block: Block | null
+  floor: Floor | null
 }
 
 export interface Section {
@@ -60,12 +76,12 @@ export interface GridSlot {
   period: number | null
   startTime: string
   endTime: string
+  durationMin: number
 }
 
 export interface ComputedGrid {
   slots: GridSlot[]
   endTime: string
-  validLabStartPeriods: number[]
 }
 
 export interface TimeConfig {
@@ -73,7 +89,8 @@ export interface TimeConfig {
   termId: string
   startTime: string
   numPeriods: number
-  periodDurationMin: number
+  morningPeriodDurationMin: number
+  afternoonPeriodDurationMin: number
   breakAfterPeriod: number
   breakDurationMin: number
   lunchAfterPeriod: number
@@ -176,7 +193,6 @@ export interface Conflict {
 export interface TimetableGrid {
   slots: GridSlot[]
   endTime: string
-  validLabStartPeriods: number[]
   workingDays: Day[]
   numPeriods: number
 }
@@ -243,7 +259,7 @@ export interface AvailabilityResponse {
 export interface FacultyTimetable {
   term: { id: string; label: string }
   faculty: Faculty
-  grid: Omit<TimetableGrid, "validLabStartPeriods">
+  grid: TimetableGrid
   entries: (Omit<TimetableEntry, "faculty"> & {
     section: {
       id: string

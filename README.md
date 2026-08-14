@@ -96,8 +96,9 @@ scripts/   clean-install.mjs
 - **Phase 8 — polish** ✅ dashboard driven by real per-section build status (what to do next for each section, with progress), print-all page, and a warning when a section has no home room
 - **Import** ✅ read an existing Excel/CSV timetable sheet into a section, creating the subjects, faculty, curriculum hours and assignments it implies
 
-All eight phases are complete. **87 unit tests** (`npm test`) plus four integration
-scripts covering scheduling, importing, year reset and build status — see
+All eight phases are complete. **93 unit tests** (`npm test`) plus five integration
+scripts covering scheduling, importing, year reset, build status and the
+free-span / block-floor / cascade-delete behaviour — see
 [server/test/README.md](./server/test/README.md).
 
 ## Deployment
@@ -108,7 +109,13 @@ Server on Render, client on Vercel. See [DEPLOYMENT.md](./DEPLOYMENT.md) for exa
 
 **Everything about timing is configuration.** Start time, period count, period length, and where break and lunch fall are stored per term. Clock times, the printed header and the valid lab windows are all computed from that — 8:00–3:00 with 50-minute periods and 9:00–5:00 with 60-minute periods are the same code path.
 
-**Labs are three continuous periods.** Lunch does not break that continuity (it isn't a teaching period), but the mid-morning break does. Valid lab start periods are derived from the time config rather than hardcoded.
+**Labs are as long as you say they are.** A lab covers however many consecutive periods you pick when placing it — one, three, five. There is no continuity rule left: a lab may run across the break or lunch, because the admin knows the building better than the app does. The only limit is that the block has to fit inside the day.
+
+**Morning and afternoon periods can be different lengths.** The college runs 60-minute mornings and 50-minute afternoons, so the term stores both. The split is lunch: periods up to and including lunch use the morning length, everything after uses the afternoon length. Clock times, the printed header and the whole grid follow from that.
+
+**Rooms are organised by block and floor.** Blocks A, L and V, floors GF/FF/SF/TF/LF, giving names like `AFF-3`. Both are stored as fields so room lists can be filtered, and a whole floor can be created in one go rather than a room at a time.
+
+**Deleting a subject removes it everywhere.** Faculty eligibility, every section's curriculum row, the locked-in assignments and any classes already on a timetable. The confirmation dialog fetches and shows those counts first, because it is not a recoverable action.
 
 **Faculty timetables are never stored.** They're a query over the placed timetable entries, so they can't drift out of sync with the section timetables they come from.
 

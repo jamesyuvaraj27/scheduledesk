@@ -50,12 +50,20 @@ export function SectionTimetablePage() {
 
       <div className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
         <header className="text-center mb-4">
-          <h1 className="font-semibold text-lg">
-            Year &amp; Sem : {toRoman(section.year)} — {term.label}
+          {/* Branch, section and room lead the sheet — it's how the office
+              identifies which timetable they're holding. */}
+          <h1 className="font-semibold text-xl">
+            {section.branch?.code ?? section.branch?.name} · Section{" "}
+            {section.name} · Room {homeRoom}
           </h1>
+          <p className="text-sm font-medium mt-1">
+            {section.branch?.name}
+          </p>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {section.branch?.department?.code} · {section.branch?.name} ·{" "}
-            Section {section.name} · Room {homeRoom}
+            Year &amp; Sem : {toRoman(section.year)} — {term.label}
+            {section.branch?.department?.code
+              ? ` · ${section.branch.department.code}`
+              : ""}
           </p>
         </header>
 

@@ -2,7 +2,7 @@ import { Router } from "express"
 import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
-import { buildDayGrid, dayEndTime, validLabStartPeriods, LAB_SPAN } from "../lib/periods.js"
+import { buildDayGrid, dayEndTime } from "../lib/periods.js"
 import {
   computeAvailability,
   validatePlacement,
@@ -138,7 +138,6 @@ timetableRouter.get(
       grid: {
         slots: buildDayGrid(cfg),
         endTime: dayEndTime(cfg),
-        validLabStartPeriods: validLabStartPeriods(cfg),
         workingDays: cfg.workingDays,
         numPeriods: cfg.numPeriods,
       },
@@ -183,6 +182,9 @@ timetableRouter.get(
         subjectId: z.string().optional(),
         roomId: z.string().optional(),
         entryId: z.string().optional(),
+        // How many consecutive periods the lab should cover. Labs are no
+        // longer pinned to a fixed span — the admin chooses.
+        periodSpan: z.coerce.number().int().min(1).max(12).optional(),
       })
       .parse(req.query)
 
@@ -195,7 +197,7 @@ timetableRouter.get(
     const base: Omit<Candidate, "dayOfWeek" | "startPeriod"> = {
       id: query.entryId,
       sectionId,
-      periodSpan: query.entryType === "LAB" ? LAB_SPAN : 1,
+      periodSpan: query.entryType === "LAB" ? (query.periodSpan ?? 1) : 1,
       entryType: query.entryType,
       subjectId: query.subjectId ?? null,
       facultyId,
@@ -219,6 +221,8 @@ const entrySchema = z.object({
   entryType: z.enum(ENTRY_TYPES),
   subjectId: z.string().nullish(),
   roomId: z.string().nullish(),
+  /** Consecutive periods covered. Only meaningful for labs; others are 1. */
+  periodSpan: z.number().int().min(1).max(12).optional(),
 })
 
 timetableRouter.post(
@@ -332,6 +336,7 @@ function buildCandidate(
     entryType: EntryType
     subjectId?: string | null
     roomId?: string | null
+    periodSpan?: number
   },
   homeRoomId: string | null,
   ctx: SchedulingContext,
@@ -349,7 +354,7 @@ function buildCandidate(
     sectionId,
     dayOfWeek: body.dayOfWeek as Day,
     startPeriod: body.startPeriod,
-    periodSpan: body.entryType === "LAB" ? LAB_SPAN : 1,
+    periodSpan: body.entryType === "LAB" ? (body.periodSpan ?? 1) : 1,
     entryType: body.entryType,
     subjectId: body.subjectId ?? null,
     facultyId,

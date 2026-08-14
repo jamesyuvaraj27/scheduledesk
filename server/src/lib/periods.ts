@@ -2,10 +2,10 @@
  * Period-grid computation.
  *
  * The whole app is driven by a small TimeConfig (start time, period count,
- * period duration, where break/lunch fall). Everything else — the clock times
- * shown in the header, which 3-period windows a lab may occupy — is DERIVED
- * from that config rather than hardcoded. Change the config and the grid,
- * the printed timetable and the lab rules all follow automatically.
+ * morning/afternoon period durations, where break/lunch fall). Everything
+ * else — the clock times shown in the header, how long a block of periods
+ * runs — is DERIVED from that config rather than hardcoded. Change the
+ * config and the grid and the printed timetable follow automatically.
  */
 
 export type SlotKind = "PERIOD" | "BREAK" | "LUNCH";
@@ -18,12 +18,17 @@ export interface GridSlot {
   startTime: string;
   /** "08:50" */
   endTime: string;
+  /** Minutes this slot lasts. Periods differ morning vs afternoon. */
+  durationMin: number;
 }
 
 export interface TimeConfigInput {
   startTime: string;
   numPeriods: number;
-  periodDurationMin: number;
+  /** Length of periods up to and including `lunchAfterPeriod`. */
+  morningPeriodDurationMin: number;
+  /** Length of periods after `lunchAfterPeriod`. */
+  afternoonPeriodDurationMin: number;
   breakAfterPeriod: number;
   breakDurationMin: number;
   lunchAfterPeriod: number;
@@ -45,6 +50,21 @@ function toHHMM(mins: number): string {
 }
 
 /**
+ * How long a given period lasts.
+ *
+ * The morning/afternoon split is lunch: periods up to and including
+ * `lunchAfterPeriod` are morning periods, everything after is afternoon.
+ * If lunch is disabled (duration 0) the whole day uses the morning length,
+ * since there is no boundary to switch at.
+ */
+export function periodDuration(cfg: TimeConfigInput, period: number): number {
+  if (cfg.lunchDurationMin <= 0) return cfg.morningPeriodDurationMin;
+  return period <= cfg.lunchAfterPeriod
+    ? cfg.morningPeriodDurationMin
+    : cfg.afternoonPeriodDurationMin;
+}
+
+/**
  * Walk the config forward to produce the ordered list of slots for one day,
  * with real clock times. Break and lunch are inserted as their own slots
  * after the period they're configured to follow.
@@ -54,12 +74,14 @@ export function buildDayGrid(cfg: TimeConfigInput): GridSlot[] {
   let cursor = toMinutes(cfg.startTime);
 
   for (let period = 1; period <= cfg.numPeriods; period++) {
-    const end = cursor + cfg.periodDurationMin;
+    const duration = periodDuration(cfg, period);
+    const end = cursor + duration;
     slots.push({
       kind: "PERIOD",
       period,
       startTime: toHHMM(cursor),
       endTime: toHHMM(end),
+      durationMin: duration,
     });
     cursor = end;
 
@@ -70,6 +92,7 @@ export function buildDayGrid(cfg: TimeConfigInput): GridSlot[] {
         period: null,
         startTime: toHHMM(cursor),
         endTime: toHHMM(breakEnd),
+        durationMin: cfg.breakDurationMin,
       });
       cursor = breakEnd;
     }
@@ -81,6 +104,7 @@ export function buildDayGrid(cfg: TimeConfigInput): GridSlot[] {
         period: null,
         startTime: toHHMM(cursor),
         endTime: toHHMM(lunchEnd),
+        durationMin: cfg.lunchDurationMin,
       });
       cursor = lunchEnd;
     }
@@ -95,37 +119,22 @@ export function dayEndTime(cfg: TimeConfigInput): string {
   return grid.length ? grid[grid.length - 1].endTime : cfg.startTime;
 }
 
-export const LAB_SPAN = 3;
-
 /**
- * Which period numbers may a 3-hour lab START at?
+ * Which period numbers may a block of `span` periods START at?
  *
- * Rule (confirmed with the user): a lab must occupy three CONSECUTIVE periods.
- * Lunch does NOT break that continuity — a lab may run "1 period before lunch
- * + 2 periods after lunch", because lunch isn't a teaching period. The short
- * mid-morning break DOES break continuity, so no lab may straddle it.
+ * There is deliberately no continuity rule any more — the admin decides
+ * where labs go, including across the break. The only constraint is that
+ * the whole span has to fit inside the day.
  */
-export function validLabStartPeriods(cfg: TimeConfigInput): number[] {
+export function validStartPeriods(
+  cfg: TimeConfigInput,
+  span: number
+): number[] {
   const starts: number[] = [];
-
-  for (let start = 1; start + LAB_SPAN - 1 <= cfg.numPeriods; start++) {
-    const last = start + LAB_SPAN - 1;
-    // The break sits after period `breakAfterPeriod`. If that boundary falls
-    // strictly inside the window, the lab would straddle the break.
-    const straddlesBreak =
-      cfg.breakDurationMin > 0 &&
-      cfg.breakAfterPeriod >= start &&
-      cfg.breakAfterPeriod < last;
-
-    if (!straddlesBreak) starts.push(start);
+  for (let start = 1; start + span - 1 <= cfg.numPeriods; start++) {
+    starts.push(start);
   }
-
   return starts;
-}
-
-/** The concrete period numbers a lab starting at `startPeriod` occupies. */
-export function labPeriods(startPeriod: number): number[] {
-  return Array.from({ length: LAB_SPAN }, (_, i) => startPeriod + i);
 }
 
 /** Period numbers occupied by an entry, for clash checking. */

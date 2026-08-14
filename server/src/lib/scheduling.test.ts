@@ -15,7 +15,8 @@ import {
 const TIME_CONFIG = {
   startTime: "08:00",
   numPeriods: 7,
-  periodDurationMin: 50,
+  morningPeriodDurationMin: 50,
+  afternoonPeriodDurationMin: 50,
   breakAfterPeriod: 2,
   breakDurationMin: 20,
   lunchAfterPeriod: 5,
@@ -221,7 +222,7 @@ describe("clash detection", () => {
 })
 
 describe("lab rules", () => {
-  test("a lab cannot straddle the break", () => {
+  test("a lab may now straddle the break — the admin decides", () => {
     const c = theory({
       entryType: "LAB",
       subjectId: DBMS_LAB,
@@ -229,17 +230,50 @@ describe("lab rules", () => {
       startPeriod: 1, // 1,2,3 — break sits after period 2
       roomId: LAB_1,
     })
-    assert.ok(codes(validatePlacement(c, context())).includes("INVALID_LAB_WINDOW"))
+    assert.deepEqual(validatePlacement(c, context()), [])
   })
 
-  test("a lab must be exactly three periods", () => {
+  test("a lab can be any number of periods", () => {
+    for (const periodSpan of [1, 2, 3, 4]) {
+      const c = theory({
+        entryType: "LAB",
+        subjectId: DBMS_LAB,
+        periodSpan,
+        startPeriod: 3,
+        roomId: LAB_1,
+      })
+      assert.deepEqual(
+        validatePlacement(c, context()),
+        [],
+        `span ${periodSpan} should be legal`
+      )
+    }
+  })
+
+  test("a lab still cannot run past the end of the day", () => {
     const c = theory({
       entryType: "LAB",
       subjectId: DBMS_LAB,
-      periodSpan: 2,
+      periodSpan: 3,
+      startPeriod: 6, // 6,7,8 — the day only has 7
+      roomId: LAB_1,
+    })
+    assert.ok(codes(validatePlacement(c, context())).includes("OUT_OF_RANGE"))
+  })
+
+  test("a lab span of zero is rejected", () => {
+    const c = theory({
+      entryType: "LAB",
+      subjectId: DBMS_LAB,
+      periodSpan: 0,
       startPeriod: 3,
       roomId: LAB_1,
     })
+    assert.ok(codes(validatePlacement(c, context())).includes("INVALID_SPAN"))
+  })
+
+  test("only labs may cover more than one period", () => {
+    const c = theory({ subjectId: ML, periodSpan: 2, startPeriod: 3 })
     assert.ok(codes(validatePlacement(c, context())).includes("INVALID_SPAN"))
   })
 
@@ -342,7 +376,9 @@ describe("availability for the clash-blocked picker", () => {
     assert.equal(blocked[0].reasons[0].code, "FACULTY_CLASH")
   })
 
-  test("a lab is only offered at legal 3-period windows", () => {
+  test("a 3-period lab is offered anywhere it fits in the day", () => {
+    // Spans are free now: the break no longer blocks a window, so the only
+    // limit is that 3 periods must fit inside the 7-period day.
     const slots = computeAvailability(
       { sectionId: SEC_A, periodSpan: 3, entryType: "LAB", subjectId: DBMS_LAB, facultyId: SAI, roomId: LAB_1 },
       context()
@@ -350,7 +386,18 @@ describe("availability for the clash-blocked picker", () => {
     const openMonday = slots
       .filter((s) => s.dayOfWeek === "MON" && s.available)
       .map((s) => s.startPeriod)
-    assert.deepEqual(openMonday, [3, 4, 5])
+    assert.deepEqual(openMonday, [1, 2, 3, 4, 5])
+  })
+
+  test("a longer lab is offered at correspondingly fewer starts", () => {
+    const slots = computeAvailability(
+      { sectionId: SEC_A, periodSpan: 5, entryType: "LAB", subjectId: DBMS_LAB, facultyId: SAI, roomId: LAB_1 },
+      context()
+    )
+    const openMonday = slots
+      .filter((s) => s.dayOfWeek === "MON" && s.available)
+      .map((s) => s.startPeriod)
+    assert.deepEqual(openMonday, [1, 2, 3])
   })
 })
 

@@ -2,7 +2,6 @@ import { Router } from "express"
 import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
-import { LAB_SPAN } from "../lib/periods.js"
 
 export const curriculumRouter = Router()
 
@@ -146,14 +145,8 @@ curriculumRouter.post(
       )
     }
 
-    // A lab is always three continuous periods, so its weekly hours have to
-    // be a whole number of lab blocks — otherwise it could never be placed.
-    if (data.weeklyLabHrs > 0 && data.weeklyLabHrs % LAB_SPAN !== 0) {
-      throw new AppError(
-        `Lab hours must be a multiple of ${LAB_SPAN} — a lab occupies ${LAB_SPAN} continuous periods.`,
-        422
-      )
-    }
+    // Lab hours are free-form now — a lab block is however many consecutive
+    // periods the admin places, so any weekly total is achievable.
     if (data.weeklyTheoryHrs === 0 && data.weeklyLabHrs === 0) {
       throw new AppError("Set at least one theory or lab hour.", 422)
     }
@@ -173,17 +166,6 @@ curriculumRouter.patch(
       .omit({ subjectId: true })
       .partial()
       .parse(req.body)
-
-    if (
-      data.weeklyLabHrs !== undefined &&
-      data.weeklyLabHrs > 0 &&
-      data.weeklyLabHrs % LAB_SPAN !== 0
-    ) {
-      throw new AppError(
-        `Lab hours must be a multiple of ${LAB_SPAN} — a lab occupies ${LAB_SPAN} continuous periods.`,
-        422
-      )
-    }
 
     const updated = await prisma.sectionSubject.update({
       where: { id: param(req, "id") },

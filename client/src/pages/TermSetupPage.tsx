@@ -14,7 +14,8 @@ const ALL_DAYS: Day[] = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
 interface ConfigForm {
   startTime: string
   numPeriods: number
-  periodDurationMin: number
+  morningPeriodDurationMin: number
+  afternoonPeriodDurationMin: number
   breakAfterPeriod: number
   breakDurationMin: number
   lunchAfterPeriod: number
@@ -199,7 +200,8 @@ function TimeConfigEditor({ term }: { term: AcademicTerm }) {
   const [form, setForm] = React.useState<ConfigForm>(() => ({
     startTime: cfg?.startTime ?? "08:00",
     numPeriods: cfg?.numPeriods ?? 7,
-    periodDurationMin: cfg?.periodDurationMin ?? 50,
+    morningPeriodDurationMin: cfg?.morningPeriodDurationMin ?? 60,
+    afternoonPeriodDurationMin: cfg?.afternoonPeriodDurationMin ?? 50,
     breakAfterPeriod: cfg?.breakAfterPeriod ?? 2,
     breakDurationMin: cfg?.breakDurationMin ?? 20,
     lunchAfterPeriod: cfg?.lunchAfterPeriod ?? 5,
@@ -266,10 +268,23 @@ function TimeConfigEditor({ term }: { term: AcademicTerm }) {
             <Input id="numPeriods" min={1} max={12} {...num("numPeriods")} />
           </div>
           <div>
-            <Label htmlFor="periodDurationMin">Period length (min)</Label>
-            <Input id="periodDurationMin" min={20} max={120} {...num("periodDurationMin")} />
+            <Label htmlFor="morningPeriodDurationMin">Morning period (min)</Label>
+            <Input
+              id="morningPeriodDurationMin"
+              min={20}
+              max={120}
+              {...num("morningPeriodDurationMin")}
+            />
           </div>
-          <div />
+          <div>
+            <Label htmlFor="afternoonPeriodDurationMin">Afternoon period (min)</Label>
+            <Input
+              id="afternoonPeriodDurationMin"
+              min={20}
+              max={120}
+              {...num("afternoonPeriodDurationMin")}
+            />
+          </div>
           <div>
             <Label htmlFor="breakAfterPeriod">Break after period</Label>
             <Input id="breakAfterPeriod" min={0} {...num("breakAfterPeriod")} />
@@ -360,11 +375,16 @@ function TimeConfigEditor({ term }: { term: AcademicTerm }) {
                 </table>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                A 3-hour lab may start at period{" "}
+                Periods up to and including lunch run{" "}
                 <span className="font-medium text-foreground">
-                  {preview.data.validLabStartPeriods.join(", ") || "—"}
+                  {form.morningPeriodDurationMin} min
                 </span>
-                . Labs may run across lunch but never across the break.
+                ; periods after lunch run{" "}
+                <span className="font-medium text-foreground">
+                  {form.afternoonPeriodDurationMin} min
+                </span>
+                . Labs can cover any number of consecutive periods — you choose
+                the length when placing one.
               </p>
             </>
           ) : (

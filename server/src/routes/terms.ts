@@ -2,7 +2,7 @@ import { Router } from "express"
 import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
-import { buildDayGrid, dayEndTime, validLabStartPeriods } from "../lib/periods.js"
+import { buildDayGrid, dayEndTime } from "../lib/periods.js"
 
 export const termsRouter = Router()
 
@@ -13,7 +13,8 @@ const timeConfigSchema = z.object({
     .string()
     .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use 24-hour HH:MM, e.g. 08:00"),
   numPeriods: z.number().int().min(1).max(12),
-  periodDurationMin: z.number().int().min(20).max(120),
+  morningPeriodDurationMin: z.number().int().min(20).max(120),
+  afternoonPeriodDurationMin: z.number().int().min(20).max(120),
   breakAfterPeriod: z.number().int().min(0),
   breakDurationMin: z.number().int().min(0).max(120),
   lunchAfterPeriod: z.number().int().min(0),
@@ -38,7 +39,6 @@ function withGrid<T extends { timeConfig?: TimeConfigShape | null }>(term: T) {
     grid: {
       slots: buildDayGrid(cfg),
       endTime: dayEndTime(cfg),
-      validLabStartPeriods: validLabStartPeriods(cfg),
     },
   }
 }
@@ -106,7 +106,10 @@ termsRouter.post(
             create: {
               startTime: body.timeConfig?.startTime ?? "08:00",
               numPeriods: body.timeConfig?.numPeriods ?? 7,
-              periodDurationMin: body.timeConfig?.periodDurationMin ?? 50,
+              morningPeriodDurationMin:
+                body.timeConfig?.morningPeriodDurationMin ?? 60,
+              afternoonPeriodDurationMin:
+                body.timeConfig?.afternoonPeriodDurationMin ?? 50,
               breakAfterPeriod: body.timeConfig?.breakAfterPeriod ?? 2,
               breakDurationMin: body.timeConfig?.breakDurationMin ?? 20,
               lunchAfterPeriod: body.timeConfig?.lunchAfterPeriod ?? 5,
@@ -204,7 +207,6 @@ termsRouter.get(
       ...cfg,
       grid: buildDayGrid(cfg),
       endTime: dayEndTime(cfg),
-      validLabStartPeriods: validLabStartPeriods(cfg),
     })
   })
 )
@@ -221,7 +223,6 @@ termsRouter.put(
       ...cfg,
       grid: buildDayGrid(cfg),
       endTime: dayEndTime(cfg),
-      validLabStartPeriods: validLabStartPeriods(cfg),
     })
   })
 )
@@ -237,7 +238,6 @@ termsRouter.post(
     res.json({
       slots: buildDayGrid(cfg),
       endTime: dayEndTime(cfg),
-      validLabStartPeriods: validLabStartPeriods(cfg),
     })
   })
 )
@@ -337,7 +337,9 @@ termsRouter.post(
             create: {
               startTime: source?.startTime ?? "08:00",
               numPeriods: source?.numPeriods ?? 7,
-              periodDurationMin: source?.periodDurationMin ?? 50,
+              morningPeriodDurationMin: source?.morningPeriodDurationMin ?? 60,
+              afternoonPeriodDurationMin:
+                source?.afternoonPeriodDurationMin ?? 50,
               breakAfterPeriod: source?.breakAfterPeriod ?? 2,
               breakDurationMin: source?.breakDurationMin ?? 20,
               lunchAfterPeriod: source?.lunchAfterPeriod ?? 5,

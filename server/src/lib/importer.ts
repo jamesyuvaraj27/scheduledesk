@@ -12,7 +12,6 @@
  */
 
 import type { GridSlot } from "./periods.js"
-import { LAB_SPAN } from "./periods.js"
 import type { Day } from "./scheduling.js"
 
 export const DAY_NAMES: Record<string, Day> = {
@@ -31,7 +30,7 @@ export interface ParsedEntry {
   periodSpan: number
   /** The subject code exactly as written in the sheet. */
   code: string
-  /** True when the block covers LAB_SPAN periods or the code says "LAB". */
+  /** True when the block covers several periods or the code says "LAB". */
   looksLikeLab: boolean
 }
 
@@ -355,24 +354,25 @@ export function parseTimetableSheet(
       let span = 1
       while (byPeriod.get(period + span) === code) span++
 
-      const looksLikeLab = span === LAB_SPAN || /\bLABS?\b/.test(code)
+      // Any run of identical codes is one multi-period block. Only labs can
+      // span more than a period, so a wide block is imported as a lab; the
+      // admin is told when the code doesn't obviously read like one.
+      const namedLab = /\bLABS?\b/.test(code)
+      const looksLikeLab = span > 1 || namedLab
 
-      if (span === 2 || span > LAB_SPAN) {
+      if (span > 1 && !namedLab) {
         warnings.push(
-          `${day}: "${code}" covers ${span} periods. Only single classes and ${LAB_SPAN}-period labs are supported — it was imported as ${span} separate hours.`
+          `${day}: "${code}" covers ${span} periods, so it was imported as a ${span}-period lab. Change it if that isn't right.`
         )
-        for (let i = 0; i < span; i++) {
-          entries.push({
-            dayOfWeek: day,
-            startPeriod: period + i,
-            periodSpan: 1,
-            code,
-            looksLikeLab: false,
-          })
-        }
-      } else {
-        entries.push({ dayOfWeek: day, startPeriod: period, periodSpan: span, code, looksLikeLab })
       }
+
+      entries.push({
+        dayOfWeek: day,
+        startPeriod: period,
+        periodSpan: span,
+        code,
+        looksLikeLab,
+      })
 
       codes.add(code)
       period += span

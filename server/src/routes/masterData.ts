@@ -128,6 +128,7 @@ masterDataRouter.get(
     const query = z
       .object({
         branchId: z.string().optional(),
+        departmentId: z.string().optional(),
         year: z.coerce.number().int().min(1).max(4).optional(),
       })
       .parse(req.query)
@@ -136,6 +137,11 @@ masterDataRouter.get(
       where: {
         branchId: query.branchId,
         year: query.year,
+        // Filtering by department reaches through the branch, so the UI can
+        // narrow department -> branch -> section without extra round trips.
+        branch: query.departmentId
+          ? { departmentId: query.departmentId }
+          : undefined,
       },
       orderBy: [{ year: "asc" }, { name: "asc" }],
       include: {
@@ -182,22 +188,36 @@ masterDataRouter.delete(
 
 /* ---------------- Rooms ---------------- */
 
+const ROOM_TYPES = ["CLASSROOM", "LAB", "LIBRARY", "SEMINAR_HALL"] as const
+export const BLOCKS = ["A", "L", "V"] as const
+export const FLOORS = ["GF", "FF", "SF", "TF", "LF"] as const
+
 const roomSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
-  type: z.enum(["CLASSROOM", "LAB", "LIBRARY", "SEMINAR_HALL"]),
+  type: z.enum(ROOM_TYPES),
   capacity: z.number().int().positive().nullish(),
+  block: z.enum(BLOCKS).nullish(),
+  floor: z.enum(FLOORS).nullish(),
 })
 
 masterDataRouter.get(
   "/rooms",
   asyncHandler(async (req, res) => {
-    const type = z
-      .enum(["CLASSROOM", "LAB", "LIBRARY", "SEMINAR_HALL"])
-      .optional()
-      .parse(req.query.type)
+    const query = z
+      .object({
+        type: z.enum(ROOM_TYPES).optional(),
+        block: z.enum(BLOCKS).optional(),
+        floor: z.enum(FLOORS).optional(),
+      })
+      .parse(req.query)
+
     const rooms = await prisma.room.findMany({
-      where: type ? { type } : undefined,
-      orderBy: [{ type: "asc" }, { name: "asc" }],
+      where: {
+        type: query.type,
+        block: query.block,
+        floor: query.floor,
+      },
+      orderBy: [{ block: "asc" }, { floor: "asc" }, { name: "asc" }],
     })
     res.json(rooms)
   })
@@ -209,6 +229,66 @@ masterDataRouter.post(
     const data = roomSchema.parse(req.body)
     const room = await prisma.room.create({ data })
     res.status(201).json(room)
+  })
+)
+
+/**
+ * Bulk-create the rooms on one floor of one block.
+ *
+ * Rooms here are named by position (block A, first floor, room 3 -> "AFF-3"),
+ * and a floor can hold a dozen of them, so adding them one at a time is a
+ * chore. Names that already exist are skipped rather than failing the whole
+ * batch, which makes the endpoint safe to re-run after adding a few rooms.
+ */
+masterDataRouter.post(
+  "/rooms/bulk",
+  asyncHandler(async (req, res) => {
+    const body = z
+      .object({
+        block: z.enum(BLOCKS),
+        floor: z.enum(FLOORS),
+        type: z.enum(ROOM_TYPES),
+        count: z.number().int().min(1).max(60),
+        startNumber: z.number().int().min(1).default(1),
+        capacity: z.number().int().positive().nullish(),
+      })
+      .parse(req.body)
+
+    const prefix = `${body.block}${body.floor}`
+    const names = Array.from(
+      { length: body.count },
+      (_, i) => `${prefix}-${body.startNumber + i}`
+    )
+
+    const existing = await prisma.room.findMany({
+      where: { name: { in: names } },
+      select: { name: true },
+    })
+    const taken = new Set(existing.map((r) => r.name))
+    const toCreate = names.filter((n) => !taken.has(n))
+
+    if (toCreate.length > 0) {
+      await prisma.room.createMany({
+        data: toCreate.map((name) => ({
+          name,
+          type: body.type,
+          capacity: body.capacity ?? null,
+          block: body.block,
+          floor: body.floor,
+        })),
+      })
+    }
+
+    const rooms = await prisma.room.findMany({
+      where: { name: { in: names } },
+      orderBy: { name: "asc" },
+    })
+
+    res.status(201).json({
+      created: toCreate.length,
+      skipped: [...taken].sort(),
+      rooms,
+    })
   })
 )
 
@@ -276,11 +356,94 @@ masterDataRouter.patch(
   })
 )
 
+/**
+ * What would deleting this subject take with it?
+ *
+ * Deleting a subject cascades into faculty eligibility, every section's
+ * curriculum, the locked-in faculty assignments and any classes already on a
+ * timetable. That's a lot to lose silently, so the UI shows these counts in
+ * the confirmation dialog before the delete is allowed through.
+ */
+masterDataRouter.get(
+  "/subjects/:id/delete-impact",
+  asyncHandler(async (req, res) => {
+    const id = param(req, "id")
+    const subject = await prisma.subject.findUnique({
+      where: { id },
+      include: { branch: true },
+    })
+    if (!subject) throw notFound("Subject")
+
+    const [eligibleFaculty, curriculumRows, assignments, entries, sections] =
+      await Promise.all([
+        prisma.facultySubject.count({ where: { subjectId: id } }),
+        prisma.sectionSubject.count({ where: { subjectId: id } }),
+        prisma.sectionAssignment.count({ where: { subjectId: id } }),
+        prisma.timetableEntry.count({ where: { subjectId: id } }),
+        prisma.sectionSubject.findMany({
+          where: { subjectId: id },
+          select: {
+            section: {
+              select: {
+                id: true,
+                name: true,
+                year: true,
+                branch: { select: { code: true } },
+              },
+            },
+          },
+        }),
+      ])
+
+    res.json({
+      subject: { id: subject.id, code: subject.code, name: subject.name },
+      eligibleFaculty,
+      curriculumRows,
+      assignments,
+      placedClasses: entries,
+      sections: sections.map((r) => ({
+        id: r.section.id,
+        label: `${r.section.year} yr ${r.section.branch.code} ${r.section.name}`,
+      })),
+    })
+  })
+)
+
+/**
+ * Deleting a subject removes it everywhere: faculty eligibility, curriculum
+ * rows, locked assignments and any classes already placed. The database
+ * cascades handle the child rows; assignments are cleared explicitly first so
+ * the intent is visible here rather than only in the schema.
+ */
 masterDataRouter.delete(
   "/subjects/:id",
   asyncHandler(async (req, res) => {
-    await prisma.subject.delete({ where: { id: param(req, "id") } })
-    res.status(204).end()
+    const id = param(req, "id")
+
+    const removed = await prisma.$transaction(async (tx) => {
+      const entries = await tx.timetableEntry.deleteMany({
+        where: { subjectId: id },
+      })
+      const assignments = await tx.sectionAssignment.deleteMany({
+        where: { subjectId: id },
+      })
+      const curriculum = await tx.sectionSubject.deleteMany({
+        where: { subjectId: id },
+      })
+      const eligibility = await tx.facultySubject.deleteMany({
+        where: { subjectId: id },
+      })
+      await tx.subject.delete({ where: { id } })
+
+      return {
+        placedClasses: entries.count,
+        assignments: assignments.count,
+        curriculumRows: curriculum.count,
+        eligibleFaculty: eligibility.count,
+      }
+    })
+
+    res.json(removed)
   })
 )
 

@@ -13,7 +13,7 @@
  * the grid greys out every slot that would fail before the user clicks.
  */
 
-import { LAB_SPAN, occupiedPeriods, validLabStartPeriods } from "./periods.js"
+import { occupiedPeriods } from "./periods.js"
 
 export type Day = "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN"
 
@@ -25,7 +25,6 @@ export type ConflictCode =
   | "SECTION_CLASH"
   | "FACULTY_CLASH"
   | "ROOM_CLASH"
-  | "INVALID_LAB_WINDOW"
   | "INVALID_SPAN"
   | "OUT_OF_RANGE"
   | "NOT_A_WORKING_DAY"
@@ -71,7 +70,8 @@ export interface Candidate {
 
 export interface TimeConfigLike {
   numPeriods: number
-  periodDurationMin: number
+  morningPeriodDurationMin: number
+  afternoonPeriodDurationMin: number
   startTime: string
   breakAfterPeriod: number
   breakDurationMin: number
@@ -124,10 +124,6 @@ export function isActivity(type: EntryType): boolean {
 /** Every activity happens once a week per section. */
 export const ACTIVITY_WEEKLY_HOURS = 1
 
-function expectedSpan(entryType: EntryType): number {
-  return entryType === "LAB" ? LAB_SPAN : 1
-}
-
 /**
  * The single source of truth for whether a placement is legal.
  * Returns every reason it fails — an empty array means it's fine.
@@ -150,14 +146,22 @@ export function validatePlacement(
     })
   }
 
-  const required = expectedSpan(candidate.entryType)
-  if (candidate.periodSpan !== required) {
+  // Labs may span as many consecutive periods as the admin chooses; only
+  // non-lab entries are pinned to a single period.
+  if (!Number.isInteger(candidate.periodSpan) || candidate.periodSpan < 1) {
     conflicts.push({
       code: "INVALID_SPAN",
-      message:
-        candidate.entryType === "LAB"
-          ? `A lab must occupy exactly ${LAB_SPAN} continuous periods.`
-          : "This entry must occupy exactly one period.",
+      message: "A class must cover at least one period.",
+    })
+  } else if (candidate.entryType !== "LAB" && candidate.periodSpan !== 1) {
+    conflicts.push({
+      code: "INVALID_SPAN",
+      message: "Only labs can cover more than one period.",
+    })
+  } else if (candidate.periodSpan > timeConfig.numPeriods) {
+    conflicts.push({
+      code: "INVALID_SPAN",
+      message: `The day only has ${timeConfig.numPeriods} periods.`,
     })
   }
 
@@ -169,20 +173,6 @@ export function validatePlacement(
       code: "OUT_OF_RANGE",
       message: `That doesn't fit — the day has ${timeConfig.numPeriods} periods.`,
     })
-  }
-
-  // A lab may run across lunch but never across the morning break.
-  if (candidate.entryType === "LAB") {
-    const validStarts = validLabStartPeriods(timeConfig)
-    if (!validStarts.includes(candidate.startPeriod)) {
-      conflicts.push({
-        code: "INVALID_LAB_WINDOW",
-        message:
-          validStarts.length > 0
-            ? `A lab can't run across the break. It may start at period ${validStarts.join(", ")}.`
-            : "No 3-period window fits in the current daily timings.",
-      })
-    }
   }
 
   /* ---- subject / faculty consistency ---- */

@@ -13,7 +13,6 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { api } from "@/lib/api"
 import type { CurriculumResponse, CurriculumRow } from "@/lib/types"
 
-const LAB_SPAN = 3
 
 export function CurriculumPage() {
   const { sectionId = "" } = useParams()
@@ -228,7 +227,6 @@ function CurriculumTableRow({
       <Td>
         <HoursInput
           value={row.weeklyLabHrs}
-          step={LAB_SPAN}
           onCommit={(v) => onHoursChange({ weeklyLabHrs: v })}
         />
       </Td>
@@ -318,10 +316,11 @@ function AddSubjectDialog({
 
   React.useEffect(() => {
     if (!chosen) return
-    // Sensible defaults: a lab subject is one 3-period block a week.
+    // Sensible default for a lab subject — the admin can change both the
+    // weekly total here and the length of each block when placing it.
     if (chosen.type === "LAB") {
       setTheory("0")
-      setLab(String(LAB_SPAN))
+      setLab("3")
     } else {
       setTheory("4")
       setLab("0")
@@ -388,12 +387,12 @@ function AddSubjectDialog({
               id="lab"
               type="number"
               min={0}
-              step={LAB_SPAN}
               value={lab}
               onChange={(e) => setLab(e.target.value)}
             />
             <p className="text-xs text-muted-foreground mt-1">
-              Must be a multiple of {LAB_SPAN} — a lab runs {LAB_SPAN} continuous periods.
+              Total lab periods a week. You choose how many periods each lab
+              block covers when you place it.
             </p>
           </div>
         </div>

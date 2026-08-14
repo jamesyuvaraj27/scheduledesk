@@ -2,7 +2,7 @@ import { Router } from "express"
 import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler } from "../lib/errors.js"
-import { buildDayGrid, dayEndTime, validLabStartPeriods } from "../lib/periods.js"
+import { buildDayGrid, dayEndTime } from "../lib/periods.js"
 import {
   validateSection,
   type Day,
@@ -207,7 +207,6 @@ overviewRouter.get(
       grid: {
         slots: buildDayGrid(cfg),
         endTime: dayEndTime(cfg),
-        validLabStartPeriods: validLabStartPeriods(cfg),
         workingDays: cfg.workingDays,
         numPeriods: cfg.numPeriods,
       },

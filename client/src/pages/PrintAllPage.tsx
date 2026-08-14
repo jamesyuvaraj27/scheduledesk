@@ -78,12 +78,14 @@ export function PrintAllPage() {
             )}
           >
             <header className="text-center mb-4">
-              <h2 className="font-semibold">
-                Year &amp; Sem : {toRoman(section.year)} — {data.term.label}
+              <h2 className="font-semibold text-lg">
+                {section.branch.code ?? section.branch.name} · Section{" "}
+                {section.name} · Room {section.homeRoom?.name ?? "—"}
               </h2>
+              <p className="text-sm font-medium mt-1">{section.branch.name}</p>
               <p className="text-sm text-muted-foreground mt-0.5">
-                {section.department.code} · {section.branch.name} · Section {section.name} ·
-                Room {section.homeRoom?.name ?? "—"}
+                Year &amp; Sem : {toRoman(section.year)} — {data.term.label} ·{" "}
+                {section.department.code}
               </p>
             </header>
 

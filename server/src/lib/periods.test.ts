@@ -1,16 +1,23 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
-import { buildDayGrid, dayEndTime, validLabStartPeriods } from "./periods.js"
+import {
+  buildDayGrid,
+  dayEndTime,
+  periodDuration,
+  validStartPeriods,
+} from "./periods.js"
 
 /**
- * Reverse-engineered from the college's real 4th-year CSM sheet:
+ * Reverse-engineered from the college's real 4th-year CSM sheet, with the
+ * morning and afternoon lengths set equal so it reproduces the printed times:
  * 08:00-08:50, 08:50-09:40, break, 10:00-10:50, 10:50-11:40,
  * 11:40-12:30, lunch, 13:20-14:10, 14:10-15:00.
  */
 const SAMPLE = {
   startTime: "08:00",
   numPeriods: 7,
-  periodDurationMin: 50,
+  morningPeriodDurationMin: 50,
+  afternoonPeriodDurationMin: 50,
   breakAfterPeriod: 2,
   breakDurationMin: 20,
   lunchAfterPeriod: 5,
@@ -46,51 +53,74 @@ describe("period grid", () => {
     assert.deepEqual(periods, [1, 2, 3, 4, 5, 6, 7])
   })
 
-  test("9:00 start with 60-minute periods just works", () => {
-    const cfg = { ...SAMPLE, startTime: "09:00", periodDurationMin: 60, lunchDurationMin: 60 }
-    const grid = buildDayGrid(cfg)
-    assert.equal(grid[0].startTime, "09:00")
-    assert.equal(grid[0].endTime, "10:00")
-    assert.equal(dayEndTime(cfg), "17:20")
-  })
-
   test("zero-length break produces no break slot", () => {
     const grid = buildDayGrid({ ...SAMPLE, breakDurationMin: 0 })
     assert.equal(grid.filter((s) => s.kind === "BREAK").length, 0)
   })
 })
 
-describe("lab windows", () => {
-  test("a lab may not straddle the morning break", () => {
-    // Break is after period 2, so windows 1-3 and 2-4 are impossible.
-    const starts = validLabStartPeriods(SAMPLE)
-    assert.ok(!starts.includes(1), "1-2-3 crosses the break")
-    assert.ok(!starts.includes(2), "2-3-4 crosses the break")
+describe("morning and afternoon period lengths", () => {
+  // The college runs 60-minute mornings and 50-minute afternoons.
+  const SPLIT = {
+    ...SAMPLE,
+    startTime: "09:00",
+    morningPeriodDurationMin: 60,
+    afternoonPeriodDurationMin: 50,
+  }
+
+  test("periods up to and including lunch use the morning length", () => {
+    for (const p of [1, 2, 3, 4, 5]) {
+      assert.equal(periodDuration(SPLIT, p), 60, `period ${p}`)
+    }
   })
 
-  test("a lab MAY run across lunch", () => {
-    // Lunch is after period 5; window 4-5-6 spans it and is allowed,
-    // because lunch is not a teaching period.
-    const starts = validLabStartPeriods(SAMPLE)
-    assert.ok(starts.includes(4), "4-5-6 spans lunch and should be allowed")
+  test("periods after lunch use the afternoon length", () => {
+    assert.equal(periodDuration(SPLIT, 6), 50)
+    assert.equal(periodDuration(SPLIT, 7), 50)
   })
 
-  test("the real timetable allows exactly periods 3, 4 and 5 as lab starts", () => {
-    assert.deepEqual(validLabStartPeriods(SAMPLE), [3, 4, 5])
+  test("the grid shows the change in the clock times", () => {
+    const grid = buildDayGrid(SPLIT)
+    const periods = grid.filter((s) => s.kind === "PERIOD")
+
+    // Morning: 60-minute blocks from 09:00, with a 20-minute break after P2.
+    assert.equal(periods[0].startTime, "09:00")
+    assert.equal(periods[0].endTime, "10:00")
+    assert.equal(periods[0].durationMin, 60)
+
+    // Afternoon: the first period after lunch is only 50 minutes.
+    assert.equal(periods[5].durationMin, 50)
+    assert.equal(periods[6].durationMin, 50)
   })
 
-  test("no window can start so late that it overruns the day", () => {
-    const starts = validLabStartPeriods(SAMPLE)
-    assert.ok(!starts.includes(6), "6-7-8 would need an 8th period")
+  test("a day with no lunch uses the morning length throughout", () => {
+    const noLunch = { ...SPLIT, lunchDurationMin: 0 }
+    assert.equal(periodDuration(noLunch, 7), 60)
   })
 
-  test("moving the break moves the blocked windows", () => {
-    const starts = validLabStartPeriods({ ...SAMPLE, breakAfterPeriod: 4 })
-    assert.ok(!starts.includes(3), "3-4-5 now crosses the break")
-    assert.ok(starts.includes(1), "1-2-3 is now clear of the break")
+  test("end of day accounts for both lengths", () => {
+    // 09:00 + 5x60 morning + 20 break + 50 lunch + 2x50 afternoon = 16:50
+    assert.equal(dayEndTime(SPLIT), "16:50")
+  })
+})
+
+describe("free-span placement windows", () => {
+  test("a lab may now start anywhere it fits, including across the break", () => {
+    // Break is after period 2, but that no longer blocks anything — the
+    // admin decides where labs go.
+    assert.deepEqual(validStartPeriods(SAMPLE, 3), [1, 2, 3, 4, 5])
   })
 
-  test("a day too short for three periods yields no lab windows", () => {
-    assert.deepEqual(validLabStartPeriods({ ...SAMPLE, numPeriods: 2 }), [])
+  test("a single period can start anywhere in the day", () => {
+    assert.deepEqual(validStartPeriods(SAMPLE, 1), [1, 2, 3, 4, 5, 6, 7])
+  })
+
+  test("a span is refused only when it overruns the day", () => {
+    assert.deepEqual(validStartPeriods(SAMPLE, 7), [1])
+    assert.deepEqual(validStartPeriods(SAMPLE, 8), [])
+  })
+
+  test("a two-period lab is legal now that spans are free", () => {
+    assert.deepEqual(validStartPeriods(SAMPLE, 2), [1, 2, 3, 4, 5, 6])
   })
 })

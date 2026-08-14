@@ -37,7 +37,11 @@ model TimeConfig {
 
   startTime         String   // "08:00"
   numPeriods        Int      @default(7)
-  periodDurationMin Int      @default(50)
+  // Morning and afternoon periods can be different lengths — the split is
+  // lunch. Periods up to and including lunchAfterPeriod use the morning
+  // duration; everything after it uses the afternoon duration.
+  morningPeriodDurationMin   Int @default(60)
+  afternoonPeriodDurationMin Int @default(50)
   breakAfterPeriod  Int      @default(2)   // break falls after this period number
   breakDurationMin  Int      @default(15)
   lunchAfterPeriod  Int      @default(5)   // lunch falls after this period number
@@ -92,9 +96,16 @@ model Room {
   name     String  @unique
   type     RoomType
   capacity Int?
+  // Physical location. Rooms are named by block + floor in this college
+  // (e.g. block A, first floor -> "AFF-1"), so both are stored separately
+  // to allow filtering and bulk creation per block/floor.
+  block    Block?
+  floor    Floor?
 
   sectionsUsingAsHome Section[]
   timetableEntries    TimetableEntry[]
+
+  @@index([block, floor])
 }
 
 enum RoomType {
@@ -102,6 +113,20 @@ enum RoomType {
   LAB
   LIBRARY
   SEMINAR_HALL
+}
+
+enum Block {
+  A
+  L
+  V
+}
+
+enum Floor {
+  GF // ground floor
+  FF // first floor
+  SF // second floor
+  TF // third floor
+  LF // last floor
 }
 
 // ---------- Faculty & subjects ----------
@@ -139,12 +164,14 @@ enum SubjectType {
   LAB
 }
 
-// Eligibility: which faculty CAN teach which subject (many-to-many)
+// Eligibility: which faculty CAN teach which subject (many-to-many).
+// Cascades on subject delete — removing a subject must not leave a faculty
+// member marked eligible for something that no longer exists.
 model FacultySubject {
   facultyId String
-  faculty   Faculty @relation(fields: [facultyId], references: [id])
+  faculty   Faculty @relation(fields: [facultyId], references: [id], onDelete: Cascade)
   subjectId String
-  subject   Subject @relation(fields: [subjectId], references: [id])
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
 
   @@id([facultyId, subjectId])
 }
@@ -157,7 +184,7 @@ model SectionSubject {
   sectionId       String
   section         Section @relation(fields: [sectionId], references: [id])
   subjectId       String
-  subject         Subject @relation(fields: [subjectId], references: [id])
+  subject         Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   weeklyTheoryHrs Int     @default(0)
   weeklyLabHrs    Int     @default(0)
 
@@ -172,7 +199,7 @@ model SectionAssignment {
   sectionId String
   section   Section @relation(fields: [sectionId], references: [id])
   subjectId String
-  subject   Subject @relation(fields: [subjectId], references: [id])
+  subject   Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   facultyId String
   faculty   Faculty @relation(fields: [facultyId], references: [id])
 
@@ -199,10 +226,10 @@ enum DayOfWeek {
   SUN
 }
 
-// The placed cell(s). A lab occupies one row with periodSpan = 3;
-// everything else has periodSpan = 1. Faculty timetables are never
-// stored — they're derived by querying this table WHERE facultyId = X
-// across every section/year in the active term (see PLAN.md §4a).
+// The placed cell(s). periodSpan is chosen freely when placing — a lab is
+// however many consecutive periods the user says it is, not a fixed 3.
+// Faculty timetables are never stored — they're derived by querying this
+// table WHERE facultyId = X across every section/year in the active term.
 model TimetableEntry {
   id          String    @id @default(cuid())
   termId      String
@@ -211,11 +238,11 @@ model TimetableEntry {
   section     Section   @relation(fields: [sectionId], references: [id])
   dayOfWeek   DayOfWeek
   startPeriod Int
-  periodSpan  Int       @default(1) // 1 for theory/library/seminar/counseling, 3 for lab
+  periodSpan  Int       @default(1) // any 1..numPeriods; user-chosen for labs
   entryType   EntryType
 
   subjectId String?
-  subject   Subject? @relation(fields: [subjectId], references: [id])
+  subject   Subject? @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   facultyId String?
   faculty   Faculty? @relation(fields: [facultyId], references: [id])
   roomId    String?
