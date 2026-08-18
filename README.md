@@ -113,7 +113,9 @@ Server on Render, client on Vercel. See [DEPLOYMENT.md](./DEPLOYMENT.md) for exa
 
 **Morning and afternoon periods can be different lengths.** The college runs 60-minute mornings and 50-minute afternoons, so the term stores both. The split is lunch: periods up to and including lunch use the morning length, everything after uses the afternoon length. Clock times, the printed header and the whole grid follow from that.
 
-**Rooms are organised by block and floor.** Blocks A, L and V, floors GF/FF/SF/TF/LF, giving names like `AFF-3`. Both are stored as fields so room lists can be filtered, and a whole floor can be created in one go rather than a room at a time.
+**Rooms are organised by block and floor.** Blocks A, L and V, floors GF/FF/SF/TF/LF, giving names like `AFF-3`. Both are stored as fields so room lists can be filtered, and a whole floor can be created in one go rather than a room at a time. A room can optionally be reserved for one year; rooms with no year set are available to everyone.
+
+**Room allocation stores nothing new.** A class already carries the room it runs in, so allocating a room just points an existing class at a different one. That single field is read two ways: the room's own timetable (`WHERE roomId = X`) and the Room Allocation grid under each section timetable. They cannot disagree, because they are the same data. Allocation is done from the room timetable, where you can see what else is competing for the space; clearing an allocation frees the room and leaves the lesson exactly where it was.
 
 **Deleting a subject removes it everywhere.** Faculty eligibility, every section's curriculum row, the locked-in assignments and any classes already on a timetable. The confirmation dialog fetches and shows those counts first, because it is not a recoverable action.
 

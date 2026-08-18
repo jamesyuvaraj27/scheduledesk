@@ -1,4 +1,7 @@
 const B = "http://localhost:4000/api"
+
+import { requireEmptyDatabase } from "./guard.mjs"
+await requireEmptyDatabase(B)
 const j = async (m, p, b) => {
   const r = await fetch(B + p, { method: m, headers: { "Content-Type": "application/json" }, body: b ? JSON.stringify(b) : undefined })
   const t = await r.text(); return { status: r.status, body: t ? JSON.parse(t) : null }

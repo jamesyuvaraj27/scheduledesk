@@ -101,6 +101,10 @@ model Room {
   // to allow filtering and bulk creation per block/floor.
   block    Block?
   floor    Floor?
+  // Optional year the room is set aside for (1-4). Rooms with no year set
+  // are available to every year — that's the default, so nothing has to be
+  // filled in for existing rooms.
+  year     Int?
 
   sectionsUsingAsHome Section[]
   timetableEntries    TimetableEntry[]

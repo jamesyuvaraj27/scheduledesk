@@ -4,7 +4,6 @@ import { ArrowLeft, Pencil, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
-import { buildDayCells } from "@/components/timetable/gridLayout"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { SectionTimetable, TimetableEntry } from "@/lib/types"
@@ -102,80 +101,60 @@ export function SectionTimetablePage() {
           </div>
         )}
 
-        <RoomSubGrid data={data} />
+        <RoomAllocationGrid data={data} />
       </div>
     </div>
   )
 }
 
 /**
- * The room row printed under the timetable. Rooms are fixed per section, so
- * this is the home classroom every period except during labs.
+ * Room Allocation — the same grid as above, but each cell shows the room the
+ * class runs in rather than the subject.
+ *
+ * This is a VIEW, not an editor. A class already carries its room, so this
+ * reads that directly; the allocation itself is done from the room's own
+ * timetable, which is where you can see what else is competing for the space.
+ * Periods with no class stay blank — there is nothing to give a room to.
  */
-function RoomSubGrid({ data }: { data: SectionTimetable }) {
+function RoomAllocationGrid({ data }: { data: SectionTimetable }) {
   const { grid, entries, section } = data
-  const home = section.homeRoom?.name ?? "—"
-  const hasLabs = entries.some((e) => e.entryType === "LAB")
-  if (!hasLabs) {
-    return (
-      <p className="mt-4 text-sm">
-        <span className="font-semibold">Room:</span> {home} (labs excepted)
-      </p>
-    )
-  }
 
   return (
-    <div className="mt-5">
-      <p className="text-sm font-semibold mb-1">Rooms</p>
-      <div className="overflow-x-auto">
-        <table className="border-collapse text-center text-xs w-full min-w-[720px] table-fixed">
-          <colgroup>
-            <col className="w-14" />
-            {grid.slots.map((s, i) => (
-              <col key={i} className={s.kind === "PERIOD" ? "" : "w-9"} />
-            ))}
-          </colgroup>
-          <tbody>
-            {grid.workingDays.map((day, rowIndex) => {
-              const cells = buildDayCells(day, grid.slots, entries)
-              return (
-                <tr key={day}>
-                  <th className="border px-1 py-1 font-semibold bg-muted/40">{day}</th>
-                  {cells.map((cell, i) => {
-                    if (cell.kind === "pause") {
-                      return rowIndex === 0 ? (
-                        <td
-                          key={i}
-                          rowSpan={grid.workingDays.length}
-                          className="border bg-muted"
-                        />
-                      ) : null
-                    }
-                    const room =
-                      cell.kind === "entry" && cell.entry.room
-                        ? cell.entry.room.name
-                        : home
-                    return (
-                      <td
-                        key={i}
-                        colSpan={cell.colSpan}
-                        className={cn(
-                          "border px-1 py-1",
-                          cell.kind === "entry" &&
-                            cell.entry.entryType === "LAB" &&
-                            "bg-warning/15 font-medium"
-                        )}
-                      >
-                        {room}
-                      </td>
-                    )
-                  })}
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
+    <div className="mt-6">
+      <div className="flex items-baseline justify-between gap-3 mb-1">
+        <p className="text-sm font-semibold">Room Allocation</p>
+        <Link
+          to="/rooms"
+          className="text-xs text-muted-foreground hover:text-foreground underline print:hidden"
+        >
+          Allocate from room timetables
+        </Link>
       </div>
+
+      <TimetableTable<TimetableEntry>
+        slots={grid.slots}
+        workingDays={grid.workingDays}
+        entries={entries}
+        renderEntry={(entry, isFirstRun) => (
+          <div
+            className={cn(
+              "w-full h-11 flex items-center justify-center px-1 text-xs",
+              entry.entryType === "LAB" && "bg-warning/15 font-medium",
+              !entry.room && "text-muted-foreground italic"
+            )}
+          >
+            {isFirstRun ? (entry.room?.name ?? "not set") : ""}
+          </div>
+        )}
+      />
+
+      <p className="text-xs text-muted-foreground mt-2 print:hidden">
+        Home classroom is{" "}
+        <span className="font-medium text-foreground">
+          {section.homeRoom?.name ?? "not set"}
+        </span>
+        . Classes use it unless they've been allocated elsewhere.
+      </p>
     </div>
   )
 }

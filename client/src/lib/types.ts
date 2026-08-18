@@ -40,6 +40,8 @@ export interface Room {
   capacity: number | null
   block: Block | null
   floor: Floor | null
+  /** Year the room is set aside for; null = any year may use it. */
+  year: number | null
 }
 
 export interface Section {
@@ -328,4 +330,49 @@ export interface PrintAllResponse {
     entries: TimetableEntry[]
     legend: { subjectId: string; code: string; facultyName: string | null }[]
   }[]
+}
+
+/* --------------------------- Room allocation ----------------------------- */
+
+/**
+ * A class as seen from a room's point of view. `label` is the
+ * YEAR_SECTION_SUBJECT string built server-side from real data.
+ */
+export interface RoomTimetableEntry {
+  id: string
+  dayOfWeek: Day
+  startPeriod: number
+  periodSpan: number
+  entryType: EntryType
+  label: string
+  section: { id: string; name: string; year: number; branchCode: string }
+  subject: { id: string; code: string; name: string } | null
+  faculty: { id: string; name: string } | null
+}
+
+export interface RoomTimetable {
+  term: { id: string; label: string }
+  room: Room
+  grid: TimetableGrid
+  entries: RoomTimetableEntry[]
+}
+
+/** A class that could take a given room on a given day/period. */
+export interface AllocatableOption {
+  entryId: string
+  label: string
+  entryType: EntryType
+  periodSpan: number
+  startPeriod: number
+  currentRoom: { id: string; name: string } | null
+  alreadyHere: boolean
+  available: boolean
+  reasons: Conflict[]
+}
+
+export interface AllocatableResponse {
+  room: Room
+  dayOfWeek: Day
+  startPeriod: number
+  options: AllocatableOption[]
 }

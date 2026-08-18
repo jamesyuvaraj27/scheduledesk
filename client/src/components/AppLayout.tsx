@@ -7,6 +7,7 @@ const navItems = [
   { to: "/term-setup", label: "Term Setup" },
   { to: "/curriculum", label: "Curriculum" },
   { to: "/faculty", label: "Faculty" },
+  { to: "/rooms", label: "Rooms" },
   { to: "/print", label: "Print" },
   { to: "/reset", label: "Reset Year" },
 ]

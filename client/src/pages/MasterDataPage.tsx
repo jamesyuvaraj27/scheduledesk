@@ -398,6 +398,11 @@ const ROOM_TYPES = [
   { value: "SEMINAR_HALL", label: "Seminar hall" },
 ]
 
+const YEAR_OPTIONS = [1, 2, 3, 4].map((y) => ({
+  value: String(y),
+  label: `Year ${y}`,
+}))
+
 const BLOCK_OPTIONS = BLOCKS.map((b) => ({ value: b, label: `Block ${b}` }))
 const FLOOR_OPTIONS = FLOORS.map((f) => ({
   value: f,
@@ -419,6 +424,7 @@ function BulkRoomDialog({ onDone }: { onDone: () => void }) {
   const [type, setType] = React.useState("CLASSROOM")
   const [count, setCount] = React.useState(6)
   const [startNumber, setStartNumber] = React.useState(1)
+  const [year, setYear] = React.useState("")
 
   const create = useMutation({
     mutationFn: () =>
@@ -428,6 +434,7 @@ function BulkRoomDialog({ onDone }: { onDone: () => void }) {
         type,
         count,
         startNumber,
+        year: year ? Number(year) : null,
       }),
     onSuccess: (r) => {
       setResult(r)
@@ -527,6 +534,21 @@ function BulkRoomDialog({ onDone }: { onDone: () => void }) {
                 onChange={(e) => setStartNumber(Number(e.target.value))}
               />
             </div>
+            <div>
+              <Label>Reserved for year</Label>
+              <select
+                value={year}
+                onChange={(e) => setYear(e.target.value)}
+                className="mt-1 block h-9 w-full rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="">Any year</option>
+                {YEAR_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -568,17 +590,20 @@ function RoomsTab() {
   const [typeFilter, setTypeFilter] = React.useState("")
   const [blockFilter, setBlockFilter] = React.useState("")
   const [floorFilter, setFloorFilter] = React.useState("")
+  const [yearFilter, setYearFilter] = React.useState("")
 
   const listPath = `/rooms${qs({
     type: typeFilter,
     block: blockFilter,
     floor: floorFilter,
+    year: yearFilter,
   })}`
   const list = useList<Room>(listPath, [
     "rooms",
     typeFilter,
     blockFilter,
     floorFilter,
+    yearFilter,
   ])
   const create = useCreate<Room>("/rooms", ["rooms"])
   const update = useUpdate<Room>("/rooms", ["rooms"])
@@ -591,7 +616,7 @@ function RoomsTab() {
       items={list.data}
       isLoading={list.isLoading}
       error={list.error}
-      columns={["Name", "Type", "Block", "Floor", "Capacity"]}
+      columns={["Name", "Type", "Block", "Floor", "Year", "Capacity"]}
       onDelete={(id) => remove.mutate(id)}
       deleteError={remove.error}
       headerAction={
@@ -622,6 +647,13 @@ function RoomsTab() {
             allLabel="All floors"
             options={FLOOR_OPTIONS}
           />
+          <FilterSelect
+            label="Year"
+            value={yearFilter}
+            onChange={setYearFilter}
+            allLabel="All years"
+            options={YEAR_OPTIONS}
+          />
         </>
       }
       formTitle={(e) => (e ? "Edit room" : "New room")}
@@ -638,6 +670,9 @@ function RoomsTab() {
           </td>
           <td className="px-3 py-2 text-muted-foreground">
             {r.floor ? FLOOR_LABELS[r.floor] : "—"}
+          </td>
+          <td className="px-3 py-2 text-muted-foreground">
+            {r.year ? `Year ${r.year}` : "Any"}
           </td>
           <td className="px-3 py-2 text-muted-foreground">{r.capacity ?? "—"}</td>
         </>
@@ -659,6 +694,13 @@ function RoomsTab() {
               type: "select",
               options: [{ value: "", label: "— none —" }, ...FLOOR_OPTIONS],
             },
+            {
+              name: "year",
+              label: "Reserved for year",
+              type: "select",
+              options: [{ value: "", label: "Any year" }, ...YEAR_OPTIONS],
+              hint: "Leave as 'Any year' unless this room belongs to one year group.",
+            },
             { name: "capacity", label: "Capacity", type: "number", placeholder: "70" },
           ]}
           initial={editing ?? undefined}
@@ -671,6 +713,7 @@ function RoomsTab() {
               capacity: values.capacity ? Number(values.capacity) : null,
               block: values.block ? String(values.block) : null,
               floor: values.floor ? String(values.floor) : null,
+              year: values.year ? Number(values.year) : null,
             }
             if (editing) update.mutate({ id: editing.id, body }, { onSuccess: close })
             else create.mutate(body, { onSuccess: close })

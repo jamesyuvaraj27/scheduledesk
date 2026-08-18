@@ -198,6 +198,8 @@ const roomSchema = z.object({
   capacity: z.number().int().positive().nullish(),
   block: z.enum(BLOCKS).nullish(),
   floor: z.enum(FLOORS).nullish(),
+  // Null means "any year can use this room".
+  year: z.number().int().min(1).max(4).nullish(),
 })
 
 masterDataRouter.get(
@@ -208,6 +210,8 @@ masterDataRouter.get(
         type: z.enum(ROOM_TYPES).optional(),
         block: z.enum(BLOCKS).optional(),
         floor: z.enum(FLOORS).optional(),
+        // Rooms reserved for this year, plus rooms open to any year.
+        year: z.coerce.number().int().min(1).max(4).optional(),
       })
       .parse(req.query)
 
@@ -216,6 +220,7 @@ masterDataRouter.get(
         type: query.type,
         block: query.block,
         floor: query.floor,
+        ...(query.year ? { OR: [{ year: query.year }, { year: null }] } : {}),
       },
       orderBy: [{ block: "asc" }, { floor: "asc" }, { name: "asc" }],
     })
@@ -251,6 +256,7 @@ masterDataRouter.post(
         count: z.number().int().min(1).max(60),
         startNumber: z.number().int().min(1).default(1),
         capacity: z.number().int().positive().nullish(),
+        year: z.number().int().min(1).max(4).nullish(),
       })
       .parse(req.body)
 
@@ -275,6 +281,7 @@ masterDataRouter.post(
           capacity: body.capacity ?? null,
           block: body.block,
           floor: body.floor,
+          year: body.year ?? null,
         })),
       })
     }

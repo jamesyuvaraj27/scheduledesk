@@ -9,6 +9,7 @@ import { CurriculumPage } from "@/pages/CurriculumPage"
 import { SectionBuilderPage } from "@/pages/SectionBuilderPage"
 import { SectionTimetablePage } from "@/pages/SectionTimetablePage"
 import { FacultyTimetablePage } from "@/pages/FacultyTimetablePage"
+import { RoomTimetablePage } from "@/pages/RoomTimetablePage"
 import { ResetYearPage } from "@/pages/ResetYearPage"
 import { PrintAllPage } from "@/pages/PrintAllPage"
 import { LoadingState } from "@/components/ui/feedback"
@@ -38,6 +39,8 @@ function App() {
             </Suspense>
           }
         />
+        <Route path="rooms" element={<RoomTimetablePage />} />
+        <Route path="rooms/:roomId/timetable" element={<RoomTimetablePage />} />
         <Route path="faculty" element={<FacultyTimetablePage />} />
         <Route path="faculty/:facultyId" element={<FacultyTimetablePage />} />
         <Route path="print" element={<PrintAllPage />} />

@@ -7,6 +7,7 @@ import { curriculumRouter } from "./routes/curriculum.js"
 import { timetableRouter } from "./routes/timetable.js"
 import { importRouter } from "./routes/importer.js"
 import { overviewRouter } from "./routes/overview.js"
+import { roomsRouter } from "./routes/rooms.js"
 import { errorHandler } from "./lib/errors.js"
 
 // Checked before anything else so a bad connection string fails loudly at
@@ -34,6 +35,9 @@ app.get("/api/health", (_req, res) => {
 })
 
 app.use("/api/terms", termsRouter)
+// Mounted before masterData/timetable so /rooms/:id/timetable and
+// /entries/:id/room resolve here rather than matching their :id routes.
+app.use("/api", roomsRouter)
 app.use("/api", overviewRouter)
 app.use("/api", importRouter)
 app.use("/api", timetableRouter)
