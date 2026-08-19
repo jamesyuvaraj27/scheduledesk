@@ -12,6 +12,7 @@ import { FacultyTimetablePage } from "@/pages/FacultyTimetablePage"
 import { RoomTimetablePage } from "@/pages/RoomTimetablePage"
 import { ResetYearPage } from "@/pages/ResetYearPage"
 import { PrintAllPage } from "@/pages/PrintAllPage"
+import { DayWiseSectionReportPage } from "@/pages/DayWiseSectionReportPage"
 import { LoadingState } from "@/components/ui/feedback"
 
 // The import screen pulls in a spreadsheet parser that most sessions never
@@ -44,6 +45,7 @@ function App() {
         <Route path="faculty" element={<FacultyTimetablePage />} />
         <Route path="faculty/:facultyId" element={<FacultyTimetablePage />} />
         <Route path="print" element={<PrintAllPage />} />
+        <Route path="reports/day-wise" element={<DayWiseSectionReportPage />} />
         <Route path="reset" element={<ResetYearPage />} />
       </Route>
     </Routes>
