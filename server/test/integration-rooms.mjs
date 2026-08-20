@@ -6,6 +6,7 @@
  * section and rooms (block V, numbers 900+, a reserved namespace) and deletes
  * only what it created. It restores the previously active term.
  */
+import "./admin-fetch.mjs" // signs in as admin; must come first
 const BASE = process.env.API ?? "http://localhost:4000/api"
 
 let pass = 0

@@ -24,6 +24,7 @@ model AcademicTerm {
   sectionSubjects    SectionSubject[]
   sectionAssignments SectionAssignment[]
   timetableEntries   TimetableEntry[]
+  timetableVersions  TimetableVersion[]
 
   @@index([isActive])
 }
@@ -137,6 +138,11 @@ enum Floor {
 
 model Faculty {
   id           String  @id @default(cuid())
+  // Human-facing unique identifier (FAC001, FAC002 ...). Two people can share
+  // a name; this is what tells them apart on screen. Internally every
+  // relation still points at `id` — facultyNo is for display and for the
+  // office to type, never a foreign key.
+  facultyNo    String  @unique
   name         String
   departmentId String
   department   Department @relation(fields: [departmentId], references: [id])
@@ -210,6 +216,43 @@ model SectionAssignment {
   @@unique([termId, sectionId, subjectId])
 }
 
+
+// ---------- Timetable versions (Live / Working) ----------
+
+// The timetable the college is actually following is LIVE. Preparing next
+// week's changes happens on a WORKING copy, which is a completely separate
+// set of TimetableEntry rows — editing one cannot touch the other, because
+// they are different rows, not different flags on the same row.
+//
+// Master data (faculty, rooms, subjects, sections) is deliberately NOT
+// versioned. There is one Faculty row per person no matter which timetable
+// is being looked at.
+enum VersionKind {
+  LIVE
+  WORKING
+  ARCHIVED
+}
+
+model TimetableVersion {
+  id          String      @id @default(cuid())
+  termId      String
+  term        AcademicTerm @relation(fields: [termId], references: [id], onDelete: Cascade)
+  kind        VersionKind
+  label       String
+  note        String?
+  createdAt   DateTime    @default(now())
+  publishedAt DateTime?
+  // Set on an ARCHIVED version: the working copy it was replaced by.
+  replacedAt  DateTime?
+
+  entries TimetableEntry[]
+
+  // Partial unique indexes enforce "at most one LIVE and one WORKING per
+  // term" — see the migration. Prisma can't express partial indexes, so they
+  // live in raw SQL there.
+  @@index([termId, kind])
+}
+
 // ---------- The actual timetable ----------
 
 enum EntryType {
@@ -238,6 +281,10 @@ model TimetableEntry {
   id          String    @id @default(cuid())
   termId      String
   term        AcademicTerm @relation(fields: [termId], references: [id])
+  // Which version of the timetable this cell belongs to. Every query that
+  // reads or writes entries filters on this — that is the isolation.
+  versionId   String
+  version     TimetableVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   sectionId   String
   section     Section   @relation(fields: [sectionId], references: [id])
   dayOfWeek   DayOfWeek
@@ -255,7 +302,8 @@ model TimetableEntry {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([versionId, sectionId, dayOfWeek])
+  @@index([versionId, facultyId, dayOfWeek])
+  @@index([versionId, roomId, dayOfWeek])
   @@index([termId, sectionId, dayOfWeek])
-  @@index([termId, facultyId, dayOfWeek])
-  @@index([termId, roomId, dayOfWeek])
 }

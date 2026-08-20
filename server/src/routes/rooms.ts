@@ -18,6 +18,12 @@ import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
 import { buildDayGrid, dayEndTime } from "../lib/periods.js"
 import {
+  assertEditable,
+  resolveVersion,
+  versionSpecFromRequest,
+  type VersionSpec,
+} from "../lib/versions.js"
+import {
   validatePlacement,
   type Day,
   type EntryType,
@@ -51,7 +57,7 @@ function classLabel(e: {
 }
 
 /** The whole active term's scheduling context, for clash checks. */
-async function loadTermContext() {
+async function loadTermContext(versionSpec?: VersionSpec) {
   const term = await prisma.academicTerm.findFirst({
     where: { isActive: true },
     include: { timeConfig: true },
@@ -63,9 +69,11 @@ async function loadTermContext() {
     )
   }
 
+  const version = await resolveVersion(term.id, versionSpec)
+
   const [entries, rooms, sectionSubjects, assignments] = await Promise.all([
     prisma.timetableEntry.findMany({
-      where: { termId: term.id },
+      where: { versionId: version.id },
       include: {
         subject: true,
         faculty: true,
@@ -82,7 +90,7 @@ async function loadTermContext() {
     prisma.sectionAssignment.findMany({ where: { termId: term.id } }),
   ])
 
-  return { term, entries, rooms, sectionSubjects, assignments }
+  return { term, version, entries, rooms, sectionSubjects, assignments }
 }
 
 /**
@@ -154,12 +162,15 @@ roomsRouter.get(
     const room = await prisma.room.findUnique({ where: { id: roomId } })
     if (!room) throw notFound("Room")
 
-    const { term, entries } = await loadTermContext()
+    const { term, version, entries } = await loadTermContext(
+      versionSpecFromRequest(req)
+    )
     const cfg = term.timeConfig!
     const mine = entries.filter((e) => e.roomId === roomId)
 
     res.json({
       term: { id: term.id, label: term.label },
+      version: { id: version.id, kind: version.kind, label: version.label },
       room,
       grid: {
         slots: buildDayGrid(cfg),
@@ -181,7 +192,9 @@ roomsRouter.get(
           branchCode: e.section.branch.code,
         },
         subject: e.subject ? { id: e.subject.id, code: e.subject.code, name: e.subject.name } : null,
-        faculty: e.faculty ? { id: e.faculty.id, name: e.faculty.name } : null,
+        faculty: e.faculty
+          ? { id: e.faculty.id, name: e.faculty.name, facultyNo: e.faculty.facultyNo }
+          : null,
       })),
     })
   })
@@ -211,7 +224,7 @@ roomsRouter.get(
     const room = await prisma.room.findUnique({ where: { id: roomId } })
     if (!room) throw notFound("Room")
 
-    const loaded = await loadTermContext()
+    const loaded = await loadTermContext(versionSpecFromRequest(req))
     const { entries } = loaded
 
     // Every class occupying this day/period — that's the candidate set.
@@ -278,11 +291,14 @@ roomsRouter.patch(
     })
     if (!entry) throw notFound("Class")
 
+    // Room allocation is a timetable edit like any other, so it obeys the same
+    // rule: the version the class belongs to has to be editable.
+    const loaded = await loadTermContext(entry.versionId)
+    await assertEditable(loaded.version)
+
     if (body.roomId) {
       const room = await prisma.room.findUnique({ where: { id: body.roomId } })
       if (!room) throw notFound("Room")
-
-      const loaded = await loadTermContext()
 
       const conflicts = validatePlacement(
         {

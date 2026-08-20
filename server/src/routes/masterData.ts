@@ -456,11 +456,45 @@ masterDataRouter.delete(
 
 /* ---------------- Faculty ---------------- */
 
+/**
+ * Faculty numbers are the thing that tells two people with the same name
+ * apart. They are stored uppercase and trimmed so "fac003" and "FAC003 " can
+ * never both exist.
+ */
 const facultySchema = z.object({
+  facultyNo: z
+    .string()
+    .trim()
+    .min(1, "Faculty number is required")
+    .max(20, "Keep the faculty number short, e.g. FAC003")
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, "Use letters, digits, . _ - / only")
+    .transform((v) => v.toUpperCase()),
   name: z.string().trim().min(1, "Name is required"),
   departmentId: z.string().min(1, "Department is required"),
   isActive: z.boolean().optional(),
 })
+
+/**
+ * The next free FACnnn, so the office never has to work out what it is.
+ * Only the plain FAC-prefixed numbers count towards the sequence — a
+ * hand-typed code like "VLITS/CSE/12" is left alone.
+ */
+async function suggestFacultyNo(): Promise<string> {
+  const existing = await prisma.faculty.findMany({ select: { facultyNo: true } })
+  let highest = 0
+  for (const { facultyNo } of existing) {
+    const match = /^FAC(\d+)$/.exec(facultyNo)
+    if (match) highest = Math.max(highest, Number(match[1]))
+  }
+  return `FAC${String(highest + 1).padStart(3, "0")}`
+}
+
+masterDataRouter.get(
+  "/faculty/next-number",
+  asyncHandler(async (_req, res) => {
+    res.json({ facultyNo: await suggestFacultyNo() })
+  })
+)
 
 masterDataRouter.get(
   "/faculty",
@@ -468,7 +502,7 @@ masterDataRouter.get(
     const departmentId = z.string().optional().parse(req.query.departmentId)
     const faculty = await prisma.faculty.findMany({
       where: departmentId ? { departmentId } : undefined,
-      orderBy: { name: "asc" },
+      orderBy: { facultyNo: "asc" },
       include: {
         department: true,
         eligibleSubjects: { include: { subject: true } },
@@ -481,7 +515,12 @@ masterDataRouter.get(
 masterDataRouter.post(
   "/faculty",
   asyncHandler(async (req, res) => {
-    const data = facultySchema.parse(req.body)
+    const data = facultySchema.parse({
+      ...req.body,
+      facultyNo: req.body?.facultyNo?.trim()
+        ? req.body.facultyNo
+        : await suggestFacultyNo(),
+    })
     const faculty = await prisma.faculty.create({
       data,
       include: { department: true, eligibleSubjects: { include: { subject: true } } },

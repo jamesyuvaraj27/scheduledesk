@@ -30,7 +30,7 @@ export function FacultyTimetablePage() {
   // Land on the first faculty member rather than an empty screen.
   React.useEffect(() => {
     if (!facultyId && faculty.data?.length) {
-      navigate(`/faculty/${faculty.data[0].id}`, { replace: true })
+      navigate(`/admin/faculty/${faculty.data[0].id}`, { replace: true })
     }
   }, [facultyId, faculty.data, navigate])
 
@@ -70,12 +70,12 @@ export function FacultyTimetablePage() {
         <div className="flex items-end gap-2">
           <Select
             value={facultyId ?? ""}
-            onChange={(e) => navigate(`/faculty/${e.target.value}`)}
+            onChange={(e) => navigate(`/admin/faculty/${e.target.value}`)}
             className="w-56"
           >
             {faculty.data.map((f) => (
               <option key={f.id} value={f.id}>
-                {f.name}
+                {f.facultyNo} — {f.name}
               </option>
             ))}
           </Select>
@@ -103,7 +103,9 @@ function FacultyGrid({ data }: { data: FacultyTimetable }) {
     <>
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">{faculty.name}</CardTitle>
+          <CardTitle className="text-base">
+            {faculty.facultyNo} — {faculty.name}
+          </CardTitle>
           <CardDescription>
             {faculty.department?.code} · {term.label}
           </CardDescription>
@@ -163,7 +165,7 @@ function FacultyGrid({ data }: { data: FacultyTimetable }) {
 
           <p className="text-xs text-muted-foreground mt-3">
             Cells show subject, then section and year, then room.{" "}
-            <Link to="/curriculum" className="underline print:hidden">
+            <Link to="/admin/curriculum" className="underline print:hidden">
               Change assignments in Curriculum.
             </Link>
           </p>

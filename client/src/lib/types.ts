@@ -66,6 +66,8 @@ export interface Subject {
 
 export interface Faculty {
   id: string
+  /** Unique, human-facing code (FAC001). Never used as a foreign key. */
+  facultyNo: string
   name: string
   departmentId: string
   isActive: boolean
@@ -235,13 +237,21 @@ export interface SectionValidation {
   valid: boolean
 }
 
+export interface LegendRow {
+  subjectId: string
+  code: string
+  facultyName: string | null
+  facultyNo?: string | null
+}
+
 export interface SectionTimetable {
   term: { id: string; label: string }
   section: Section
   grid: TimetableGrid
   entries: TimetableEntry[]
-  legend: { subjectId: string; code: string; facultyName: string | null }[]
+  legend: LegendRow[]
   validation: SectionValidation
+  version?: VersionRef
 }
 
 export interface SlotAvailability {
@@ -328,7 +338,7 @@ export interface PrintAllResponse {
       homeRoom: Room | null
     }
     entries: TimetableEntry[]
-    legend: { subjectId: string; code: string; facultyName: string | null }[]
+    legend: LegendRow[]
   }[]
 }
 
@@ -347,7 +357,7 @@ export interface RoomTimetableEntry {
   label: string
   section: { id: string; name: string; year: number; branchCode: string }
   subject: { id: string; code: string; name: string } | null
-  faculty: { id: string; name: string } | null
+  faculty: { id: string; name: string; facultyNo: string } | null
 }
 
 export interface RoomTimetable {
@@ -375,4 +385,141 @@ export interface AllocatableResponse {
   dayOfWeek: Day
   startPeriod: number
   options: AllocatableOption[]
+}
+
+/* --------------------------- Live / Working ------------------------------ */
+
+export type VersionKind = "LIVE" | "WORKING" | "ARCHIVED"
+
+export interface VersionRef {
+  id: string
+  kind: VersionKind
+  label: string
+}
+
+export interface VersionSummary extends VersionRef {
+  note: string | null
+  createdAt: string
+  publishedAt: string | null
+  entryCount: number
+}
+
+export interface VersionState {
+  term: { id: string; label: string }
+  live: VersionSummary
+  working: VersionSummary | null
+  /** True while a working copy exists — the live timetable is then read-only. */
+  liveLocked: boolean
+}
+
+/* ------------------------------ Public views ----------------------------- */
+
+export interface PublicFacultyRef {
+  id: string
+  facultyNo: string
+  name: string
+  label: string
+}
+
+export interface PublicSectionRef {
+  id: string
+  name: string
+  branchCode: string
+  branchName: string
+  label: string
+}
+
+export interface PublicMeta {
+  term: { id: string; label: string }
+  published: { label: string; publishedAt: string | null }
+  grid: TimetableGrid
+  days: { value: Day; label: string }[]
+  years: { year: number; roman: string; sections: PublicSectionRef[] }[]
+}
+
+export interface PublicTimetableEntry {
+  id: string
+  dayOfWeek: Day
+  startPeriod: number
+  periodSpan: number
+  entryType: EntryType
+  subject: { id: string; code: string; name: string } | null
+  faculty: PublicFacultyRef | null
+  room: { id: string; name: string } | null
+}
+
+export interface PublicSectionTimetable {
+  term: { id: string; label: string }
+  published: { label: string; publishedAt: string | null }
+  section: {
+    id: string
+    name: string
+    year: number
+    label: string
+    branchCode: string
+    branchName: string
+    departmentCode: string
+    homeRoom: string | null
+  }
+  grid: TimetableGrid
+  entries: PublicTimetableEntry[]
+  /** Subject code -> faculty, printed under the grid. */
+  legend: LegendRow[]
+}
+
+/** One row of a faculty member's day on the Class Adjustment page. */
+export interface AdjustmentDaySlot {
+  kind: "PERIOD" | "BREAK" | "LUNCH"
+  period: number | null
+  startTime: string
+  endTime: string
+  isTarget: boolean
+  busy: boolean
+  label: string
+  detail: {
+    subject: string | null
+    section: string
+    room: string | null
+    entryType: string
+  } | null
+}
+
+export interface AdjustmentCandidate {
+  faculty: PublicFacultyRef & { departmentCode: string }
+  teachesThisSubject: boolean
+  sameDepartment: boolean
+  periodsTaughtToday: number
+  day: AdjustmentDaySlot[]
+}
+
+export interface AdjustmentResponse {
+  readOnly: true
+  term: { id: string; label: string }
+  published: { label: string; publishedAt: string | null }
+  query: {
+    dayOfWeek: Day
+    dayLabel: string
+    startPeriod: number
+    startTime: string | null
+    endTime: string | null
+  }
+  section: {
+    id: string
+    label: string
+    year: number
+    branchCode: string
+    homeRoom: string | null
+  }
+  selectedClass: {
+    entryType: EntryType
+    subject: { code: string; name: string } | null
+    regularFaculty: PublicFacultyRef | null
+    room: string | null
+    periodSpan: number
+    startPeriod: number
+  } | null
+  grid: { slots: GridSlot[]; workingDays: Day[]; numPeriods: number }
+  availableFaculty: AdjustmentCandidate[]
+  busyCount: number
+  totalActiveFaculty: number
 }

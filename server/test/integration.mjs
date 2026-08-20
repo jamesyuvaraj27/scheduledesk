@@ -1,3 +1,4 @@
+import "./admin-fetch.mjs" // signs in as admin; must come first
 const B = "http://localhost:4000/api"
 
 import { requireEmptyDatabase } from "./guard.mjs"
@@ -61,7 +62,10 @@ console.log(`setup done in ${((Date.now() - t0) / 1000).toFixed(1)}s\n`)
 /* ---------------------------- grid + availability --------------------------- */
 let r = await j("GET", `/sections/${sec2.id}/timetable`)
 ok("timetable returns grid + legend", r.status === 200 && r.body.grid.slots.length === 9 && r.body.legend.length === 2)
-ok("grid exposes lab windows", JSON.stringify(r.body.grid.validLabStartPeriods) === "[3,4,5]")
+// Labs are no longer pinned to fixed windows — the admin chooses the span —
+// so the grid publishes the shape of the day and nothing more.
+ok("grid exposes the day's shape", r.body.grid.numPeriods === 7 && r.body.grid.workingDays.length === 6,
+   `${r.body.grid.numPeriods} periods, ${r.body.grid.workingDays?.length} days`)
 ok("empty section is invalid (hours unmet)", r.body.validation.valid === false)
 
 r = await j("GET", `/sections/${sec2.id}/availability?entryType=THEORY&subjectId=${ml.id}`)
@@ -86,14 +90,15 @@ r = await j("POST", `/sections/${sec2.id}/entries`, { dayOfWeek: "MON", startPer
 ok("server refuses the clashing placement", r.status === 409 && r.body.details[0].code === "FACULTY_CLASH")
 
 /* ------------------------------- lab rules ---------------------------------- */
-r = await j("POST", `/sections/${sec2.id}/entries`, { dayOfWeek: "TUE", startPeriod: 1, entryType: "LAB", subjectId: dbms.id, roomId: lab1.id })
-ok("rejects lab straddling the break", r.status === 409 && r.body.details.some(d => d.code === "INVALID_LAB_WINDOW"))
+// A lab that would run off the end of the day is still refused.
+r = await j("POST", `/sections/${sec2.id}/entries`, { dayOfWeek: "TUE", startPeriod: 6, periodSpan: 3, entryType: "LAB", subjectId: dbms.id, roomId: lab1.id })
+ok("rejects a lab that runs past the last period", r.status === 409 && r.body.details.some(d => d.code === "OUT_OF_RANGE"))
 
-r = await j("POST", `/sections/${sec2.id}/entries`, { dayOfWeek: "TUE", startPeriod: 3, entryType: "LAB", subjectId: dbms.id, roomId: r204.id })
+r = await j("POST", `/sections/${sec2.id}/entries`, { dayOfWeek: "TUE", startPeriod: 3, periodSpan: 3, entryType: "LAB", subjectId: dbms.id, roomId: r204.id })
 ok("rejects lab in a classroom", r.status === 409 && r.body.details.some(d => d.code === "WRONG_ROOM_TYPE"))
 
-r = await j("POST", `/sections/${sec2.id}/entries`, { dayOfWeek: "TUE", startPeriod: 4, entryType: "LAB", subjectId: dbms.id, roomId: lab1.id })
-ok("accepts lab spanning lunch (p4,5,6)", r.status === 201 && r.body.periodSpan === 3)
+r = await j("POST", `/sections/${sec2.id}/entries`, { dayOfWeek: "TUE", startPeriod: 4, periodSpan: 3, entryType: "LAB", subjectId: dbms.id, roomId: lab1.id })
+ok("accepts a 3-period lab spanning lunch (p4,5,6)", r.status === 201 && r.body.periodSpan === 3, `HTTP ${r.status}`)
 const labId = r.body.id
 
 r = await j("GET", `/sections/${sec2.id}/availability?entryType=THEORY&subjectId=${ml.id}`)
@@ -133,10 +138,13 @@ ok("free periods computed", r.body.summary.freePeriods === 42 - 8, `got ${r.body
 ok("activities excluded from faculty load", r.body.entries.every(e => e.entryType !== "LIBRARY"))
 
 /* ------------------------------ move + delete ------------------------------ */
-r = await j("PATCH", `/entries/${labId}`, { dayOfWeek: "THU", startPeriod: 3 })
-ok("moves lab to a free window", r.status === 200 && r.body.dayOfWeek === "THU")
-r = await j("PATCH", `/entries/${labId}`, { dayOfWeek: "THU", startPeriod: 1 })
-ok("refuses invalid move", r.status === 409 && r.body.details.some(d => d.code === "INVALID_LAB_WINDOW"))
+r = await j("PATCH", `/entries/${labId}`, { dayOfWeek: "THU", startPeriod: 3, periodSpan: 3 })
+ok("moves the lab to a free window", r.status === 200 && r.body.dayOfWeek === "THU", `HTTP ${r.status}`)
+// THU period 1 already holds an ML class, so a 3-period lab starting there
+// would sit on top of it.
+r = await j("PATCH", `/entries/${labId}`, { dayOfWeek: "THU", startPeriod: 1, periodSpan: 3 })
+ok("refuses a move that collides with an existing class",
+   r.status === 409 && r.body.details.some(d => d.code === "SECTION_CLASH"), `HTTP ${r.status}`)
 
 r = await j("DELETE", `/sections/${sec2.id}/entries`)
 ok("clears the section", r.status === 200 && r.body.deleted > 0, `deleted ${r.body.deleted}`)

@@ -1,3 +1,4 @@
+import "./admin-fetch.mjs" // signs in as admin; must come first
 const B = "http://localhost:4000/api"
 
 import { requireEmptyDatabase } from "./guard.mjs"

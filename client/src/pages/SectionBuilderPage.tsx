@@ -174,7 +174,7 @@ export function SectionBuilderPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <Button asChild variant="ghost" size="sm" className="-ml-2 mb-1">
-            <Link to="/curriculum">
+            <Link to="/admin/curriculum">
               <ArrowLeft /> All sections
             </Link>
           </Button>
@@ -190,12 +190,12 @@ export function SectionBuilderPage() {
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link to={`/sections/${sectionId}/import`}>
+            <Link to={`/admin/sections/${sectionId}/import`}>
               <Upload /> Import
             </Link>
           </Button>
           <Button asChild variant="outline" size="sm">
-            <Link to={`/sections/${sectionId}/timetable`}>
+            <Link to={`/admin/sections/${sectionId}/timetable`}>
               <Printer /> View &amp; print
             </Link>
           </Button>
@@ -232,7 +232,7 @@ export function SectionBuilderPage() {
           {subjectTools.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No subjects in this section's curriculum yet.{" "}
-              <Link to={`/curriculum/${sectionId}`} className="underline">
+              <Link to={`/admin/curriculum/${sectionId}`} className="underline">
                 Set it up first.
               </Link>
             </p>
@@ -369,7 +369,7 @@ export function SectionBuilderPage() {
                 <div key={l.subjectId} className="flex gap-2">
                   <span className="font-semibold min-w-14">{l.code}:</span>
                   <span className={l.facultyName ? "" : "text-warning"}>
-                    {l.facultyName ?? "no faculty assigned"}
+                    {l.facultyName ? facultyLabel(l) : "no faculty assigned"}
                   </span>
                 </div>
               ))}
@@ -445,7 +445,7 @@ function EntryCell({
       )}
       title={
         entry.subject
-          ? `${entry.subject.name}${entry.faculty ? ` — ${entry.faculty.name}` : ""}${entry.room ? ` · ${entry.room.name}` : ""}`
+          ? `${entry.subject.name}${entry.faculty ? ` — ${entry.faculty.facultyNo} ${entry.faculty.name}` : ""}${entry.room ? ` · ${entry.room.name}` : ""}`
           : entry.entryType
       }
     >
@@ -540,4 +540,10 @@ function ProgressPanel({ validation }: { validation: SectionTimetable["validatio
       </CardContent>
     </Card>
   )
+}
+
+/** "FAC003 — Ms. Y. Sireesha", or just the name on older data. */
+function facultyLabel(l: { facultyName: string | null; facultyNo?: string | null }): string {
+  if (!l.facultyName) return "\u2014"
+  return l.facultyNo ? `${l.facultyNo} \u2014 ${l.facultyName}` : l.facultyName
 }

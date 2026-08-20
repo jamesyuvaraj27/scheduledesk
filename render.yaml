@@ -15,3 +15,11 @@ services:
         sync: false
       - key: CORS_ORIGIN
         sync: false
+      # Set in the Render dashboard. Without it the admin side cannot be
+      # signed into; the public pages still work.
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: NODE_ENV
+        value: production

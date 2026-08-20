@@ -118,7 +118,7 @@ export function PrintAllPage() {
                 {legend.map((l) => (
                   <div key={l.subjectId} className="flex gap-2">
                     <span className="font-semibold min-w-16">{l.code}:</span>
-                    <span>{l.facultyName ?? "—"}</span>
+                    <span>{facultyLabel(l)}</span>
                   </div>
                 ))}
               </div>
@@ -132,4 +132,10 @@ export function PrintAllPage() {
 
 function toRoman(year: number): string {
   return ["I", "II", "III", "IV"][year - 1] ?? String(year)
+}
+
+/** "FAC003 — Ms. Y. Sireesha", or just the name on older data. */
+function facultyLabel(l: { facultyName: string | null; facultyNo?: string | null }): string {
+  if (!l.facultyName) return "\u2014"
+  return l.facultyNo ? `${l.facultyNo} \u2014 ${l.facultyName}` : l.facultyName
 }

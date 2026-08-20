@@ -4,6 +4,11 @@ import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler } from "../lib/errors.js"
 import { buildDayGrid, dayEndTime } from "../lib/periods.js"
 import {
+  resolveVersion,
+  versionSpecFromRequest,
+  type VersionSpec,
+} from "../lib/versions.js"
+import {
   validateSection,
   type Day,
   type EntryType,
@@ -22,12 +27,14 @@ export const overviewRouter = Router()
  * per-section endpoints in a loop would mean a query storm for eight sections.
  */
 
-async function loadTermData() {
+async function loadTermData(versionSpec?: VersionSpec) {
   const term = await prisma.academicTerm.findFirst({
     where: { isActive: true },
     include: { timeConfig: true },
   })
   if (!term?.timeConfig) return null
+
+  const version = await resolveVersion(term.id, versionSpec)
 
   const [sections, entries, sectionSubjects, assignments, rooms, faculty] =
     await Promise.all([
@@ -36,7 +43,7 @@ async function loadTermData() {
         include: { branch: { include: { department: true } }, homeRoom: true },
       }),
       prisma.timetableEntry.findMany({
-        where: { termId: term.id },
+        where: { versionId: version.id },
         include: { subject: true, faculty: true, room: true },
       }),
       prisma.sectionSubject.findMany({
@@ -89,18 +96,19 @@ async function loadTermData() {
     names: { faculty: facultyNames, sections: sectionNames },
   })
 
-  return { term, sections, entries, sectionSubjects, assignments, contextFor }
+  return { term, version, sections, entries, sectionSubjects, assignments, contextFor }
 }
 
 /* ----------------------------- Build status ------------------------------ */
 
 overviewRouter.get(
   "/build-status",
-  asyncHandler(async (_req, res) => {
-    const data = await loadTermData()
+  asyncHandler(async (req, res) => {
+    const data = await loadTermData(versionSpecFromRequest(req))
     if (!data) return res.json({ term: null, years: [] })
 
-    const { term, sections, entries, sectionSubjects, assignments, contextFor } = data
+    const { term, version, sections, entries, sectionSubjects, assignments, contextFor } =
+      data
 
     const rows = sections.map((section) => {
       const validation = validateSection(section.id, contextFor(section.id), {
@@ -169,6 +177,7 @@ overviewRouter.get(
 
     res.json({
       term: { id: term.id, label: term.label },
+      version: { id: version.id, kind: version.kind, label: version.label },
       years,
       totals: {
         sections: rows.length,
@@ -189,21 +198,28 @@ overviewRouter.get(
   "/print/sections",
   asyncHandler(async (req, res) => {
     const year = z.coerce.number().int().min(1).max(4).optional().parse(req.query.year)
-    const data = await loadTermData()
+    const data = await loadTermData(versionSpecFromRequest(req))
     if (!data) {
       throw new AppError("No active academic term with daily timings.", 409)
     }
 
-    const { term, sections, entries, sectionSubjects, assignments } = data
+    const { term, version, sections, entries, sectionSubjects, assignments } = data
     const cfg = term.timeConfig!
     const wanted = year ? sections.filter((s) => s.year === year) : sections
 
+    // Both parts are returned separately: the client decides how to show
+    // "FAC003 — Ms. Y. Sireesha", and anything reading facultyName still gets
+    // just the name.
     const facultyById = new Map(
-      (await prisma.faculty.findMany()).map((f) => [f.id, f.name])
+      (await prisma.faculty.findMany()).map((f) => [
+        f.id,
+        { name: f.name, facultyNo: f.facultyNo },
+      ])
     )
 
     res.json({
       term: { id: term.id, label: term.label },
+      version: { id: version.id, kind: version.kind, label: version.label },
       grid: {
         slots: buildDayGrid(cfg),
         endTime: dayEndTime(cfg),
@@ -237,10 +253,12 @@ overviewRouter.get(
             const facultyId = assignments.find(
               (a) => a.sectionId === section.id && a.subjectId === ss.subjectId
             )?.facultyId
+            const f = facultyId ? (facultyById.get(facultyId) ?? null) : null
             return {
               subjectId: ss.subjectId,
               code: ss.subject.code,
-              facultyName: facultyId ? (facultyById.get(facultyId) ?? null) : null,
+              facultyName: f?.name ?? null,
+              facultyNo: f?.facultyNo ?? null,
             }
           })
           .sort((a, b) => a.code.localeCompare(b.code)),

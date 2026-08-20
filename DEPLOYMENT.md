@@ -53,6 +53,9 @@ instead.)*
 | `DATABASE_URL` | your real Neon connection string (from `server/.env`) |
 | `NODE_VERSION` | `20.18.0` |
 | `CORS_ORIGIN` | your Vercel URL once you have it, e.g. `https://scheduledesk.vercel.app` — optional (see note below), leave unset while testing |
+| `ADMIN_PASSWORD` | the password the timetable office signs in with. **Required** — without it nobody can reach the admin side. The public timetable and class-adjustment pages keep working either way |
+| `SESSION_SECRET` | any long random string; signs the admin session cookie. Optional — one is derived from `ADMIN_PASSWORD` if unset. Changing either signs everyone out |
+| `NODE_ENV` | `production` — makes the session cookie `Secure` |
 | `PORT` | not needed — Render sets this itself and Express already reads `process.env.PORT` |
 
 Deploy. Copy the resulting URL, e.g. `https://scheduledesk-api.onrender.com`.
@@ -66,6 +69,23 @@ curl https://scheduledesk-api.onrender.com/api/health
 Note on free-tier Render: the service spins down after inactivity and the
 first request after a while takes ~30–60s to wake up. Fine for an internal
 single-admin tool; worth knowing so a slow first load isn't mistaken for a bug.
+
+**If the site shows "The API server isn't responding":** that is almost always
+this — the Render service asleep, still deploying, or crashed at boot. Vercel's
+rewrite gives up waiting and returns an HTML error page, which is not JSON. The
+app now says so in plain language instead of showing a JSON parse error. Check
+in this order:
+
+```bash
+curl -i https://<your-api>.onrender.com/api/health   # should be {"status":"ok"}
+```
+
+- Times out or takes ~45s → it was asleep. Reload the site; it is awake now.
+- `502`/`503` → the service crashed at boot. Open **Render → Logs**. The usual
+  cause is a missing or wrong `DATABASE_URL`, which the server reports on the
+  first lines of its log.
+- Works, but the site still fails → the `destination` in `vercel.json` points at
+  the wrong host. Fix it and redeploy the client.
 
 ---
 

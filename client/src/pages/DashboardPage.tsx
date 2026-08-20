@@ -76,7 +76,7 @@ export function DashboardPage() {
         </div>
         {years.length > 0 && (
           <Button asChild variant="outline" size="sm">
-            <Link to="/print">
+            <Link to="/admin/print">
               <Printer /> Print all
             </Link>
           </Button>
@@ -121,7 +121,7 @@ export function DashboardPage() {
           {SETUP_CARDS.map(({ key, label, icon: Icon }) => (
             <Link
               key={key}
-              to="/master-data"
+              to="/admin/master-data"
               className="flex items-center gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
             >
               <div className="rounded-md bg-muted p-2">

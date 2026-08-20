@@ -15,10 +15,21 @@ These hit the real API and **write real rows**. Start the app first
 (`npm run dev`), then run one from the `server` directory:
 
 ```bash
-node test/integration.mjs         # scheduling, clashes, faculty timetables
-node test/integration-import.mjs  # reading an existing sheet
-node test/integration-reset.mjs   # academic year reset and term history
+node test/integration.mjs          # scheduling, clashes, faculty timetables
+node test/integration-import.mjs   # reading an existing sheet
+node test/integration-reset.mjs    # academic year reset and term history
 node test/integration-overview.mjs # build status and print-all
+node test/integration-rooms.mjs    # room allocation
+node test/integration-newfeatures.mjs  # free lab spans, blocks/floors, cascades
+node test/integration-versions-public.mjs  # live/working, public views, admin auth,
+                                           # faculty numbers
+```
+
+Every script signs itself in first (`test/admin-fetch.mjs`) using
+`ADMIN_PASSWORD`, which must match the server's:
+
+```bash
+ADMIN_PASSWORD=your-password node test/integration.mjs
 ```
 
 Point `DATABASE_URL` at a scratch database, not one holding real timetables.
@@ -34,9 +45,10 @@ app, which keeps your master data and archives the old term.
 
 ## Which scripts are safe to run
 
-`integration-newfeatures.mjs` and `integration-rooms.mjs` are **namespaced**:
-everything they create is prefixed (`ZZ*` codes, block `V` rooms numbered from
-900, `TEST-*` terms), they only delete ids they created themselves, and they
+`integration-newfeatures.mjs`, `integration-rooms.mjs` and
+`integration-versions-public.mjs` are **namespaced**:
+everything they create is prefixed (`ZZ*`/`ZV*` codes, block `V` rooms numbered
+from 900, `TEST-*` terms), they only delete ids they created themselves, and they
 restore whichever term was active before they started. They are safe to run
 against a database that holds a real timetable.
 

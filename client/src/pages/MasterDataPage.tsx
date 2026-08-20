@@ -1001,17 +1001,22 @@ function FacultyTab() {
   const create = useCreate<Faculty>("/faculty", ["faculty"])
   const update = useUpdate<Faculty>("/faculty", ["faculty"])
   const remove = useRemove("/faculty", ["faculty"])
+  // Pre-fills the form so the office never has to work out what FACnnn is next.
+  const nextNo = useQuery({
+    queryKey: ["faculty", "next-number", list.data?.length ?? 0],
+    queryFn: () => api.get<{ facultyNo: string }>("/faculty/next-number"),
+  })
   const [eligibilityFor, setEligibilityFor] = React.useState<Faculty | null>(null)
 
   return (
     <>
       <CrudSection<Faculty>
         title="Faculty"
-        description="Who can teach what. A subject can have several eligible faculty — you pick the actual one per section during term setup."
+        description="Every faculty member has a unique number, so two people with the same name stay separate records. A subject can have several eligible faculty — you pick the actual one per section during term setup."
         items={list.data}
         isLoading={list.isLoading}
         error={list.error}
-        columns={["Name", "Department", "Can teach"]}
+        columns={["Faculty no.", "Name", "Department", "Can teach"]}
         toolbar={
           <FilterSelect
             label="Department"
@@ -1031,6 +1036,7 @@ function FacultyTab() {
         formTitle={(e) => (e ? "Edit faculty" : "New faculty")}
         renderRow={(f) => (
           <>
+            <td className="px-3 py-2 font-mono text-xs">{f.facultyNo}</td>
             <td className="px-3 py-2 font-medium">{f.name}</td>
             <td className="px-3 py-2 text-muted-foreground">{f.department?.code}</td>
             <td className="px-3 py-2">
@@ -1059,6 +1065,12 @@ function FacultyTab() {
         renderForm={(editing, close) => (
           <EntityForm
             fields={[
+              {
+                name: "facultyNo",
+                label: "Faculty number",
+                placeholder: nextNo.data?.facultyNo ?? "FAC001",
+                hint: "Unique. This is what tells two people with the same name apart.",
+              },
               { name: "name", label: "Name", placeholder: "Dr. R Arichandran", required: true },
               {
                 name: "departmentId",
@@ -1071,11 +1083,17 @@ function FacultyTab() {
                 })),
               },
             ]}
-            initial={editing ?? undefined}
+            initial={
+              editing ??
+              (nextNo.data ? { facultyNo: nextNo.data.facultyNo } : undefined)
+            }
             error={editing ? update.error : create.error}
             pending={create.isPending || update.isPending}
             onSubmit={(values) => {
+              const typed = String(values.facultyNo ?? "").trim().toUpperCase()
               const body = {
+                // Left blank on a new record, the server picks the next FACnnn.
+                ...(typed ? { facultyNo: typed } : {}),
                 name: String(values.name),
                 departmentId: String(values.departmentId),
               }
@@ -1147,7 +1165,7 @@ function EligibilityDialog({
     <Dialog
       open
       onClose={onClose}
-      title={`Subjects ${faculty.name} can teach`}
+      title={`Subjects ${faculty.facultyNo} — ${faculty.name} can teach`}
       description="Eligibility only — the actual per-section assignment happens in Term Setup."
     >
       <div className="space-y-3">

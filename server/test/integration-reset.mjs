@@ -1,3 +1,4 @@
+import "./admin-fetch.mjs" // signs in as admin; must come first
 const B = "http://localhost:4000/api"
 
 import { requireEmptyDatabase } from "./guard.mjs"
@@ -27,7 +28,25 @@ const [br, room] = await Promise.all([
   j("POST", "/rooms", { name: "Room 301", type: "CLASSROOM" }),
 ]).then(rs => rs.map(r => r.body))
 const sec = (await j("POST", "/sections", { branchId: br.id, year: 4, name: "a", homeRoomId: room.id })).body
-const term1 = (await j("POST", "/terms", { year: 2026, semester: 1, label: "2026-27 Sem I", makeActive: true })).body
+// Timings must match the sheet below or the import is refused — a flat
+// 50-minute day, 20-minute break after period 2, 50-minute lunch after 5.
+const term1 = (await j("POST", "/terms", {
+  year: 2026,
+  semester: 1,
+  label: "2026-27 Sem I",
+  makeActive: true,
+  timeConfig: {
+    startTime: "08:00",
+    numPeriods: 7,
+    morningPeriodDurationMin: 50,
+    afternoonPeriodDurationMin: 50,
+    breakAfterPeriod: 2,
+    breakDurationMin: 20,
+    lunchAfterPeriod: 5,
+    lunchDurationMin: 50,
+    workingDays: ["MON", "TUE", "WED", "THU", "FRI", "SAT"],
+  },
+})).body
 
 // Populate year one via import so there is real data to preserve.
 const imported = (await j("POST", `/sections/${sec.id}/import/commit`, { rows: SHEET, replaceExisting: true, createMissing: true })).body

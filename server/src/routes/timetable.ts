@@ -4,6 +4,12 @@ import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
 import { buildDayGrid, dayEndTime } from "../lib/periods.js"
 import {
+  assertEditable,
+  resolveVersion,
+  versionSpecFromRequest,
+  type VersionSpec,
+} from "../lib/versions.js"
+import {
   computeAvailability,
   validatePlacement,
   validateSection,
@@ -27,7 +33,7 @@ const ENTRY_TYPES = ["THEORY", "LAB", "LIBRARY", "SEMINAR", "COUNSELING"] as con
  * placement be checked against a faculty member's existing 3rd/4th-year
  * commitments.
  */
-async function loadContext(sectionId: string) {
+async function loadContext(sectionId: string, versionSpec?: VersionSpec) {
   const term = await prisma.academicTerm.findFirst({
     where: { isActive: true },
     include: { timeConfig: true },
@@ -39,6 +45,11 @@ async function loadContext(sectionId: string) {
     )
   }
 
+  // Which timetable are we looking at — the live one or the working copy?
+  // Everything below reads and writes entries for this version only, so the
+  // two can never bleed into each other.
+  const version = await resolveVersion(term.id, versionSpec)
+
   const section = await prisma.section.findUnique({
     where: { id: sectionId },
     include: { branch: { include: { department: true } }, homeRoom: true },
@@ -48,7 +59,7 @@ async function loadContext(sectionId: string) {
   const [entries, sectionSubjects, assignments, rooms, faculty, allSections] =
     await Promise.all([
       prisma.timetableEntry.findMany({
-        where: { termId: term.id },
+        where: { versionId: version.id },
         include: {
           subject: true,
           faculty: true,
@@ -102,7 +113,11 @@ async function loadContext(sectionId: string) {
     },
   }
 
-  return { term, section, ctx, richEntries: entries }
+  // Faculty numbers for display. The conflict engine's `names.faculty` map is
+  // deliberately left as plain names — it writes sentences, not labels.
+  const facultyNumbers = new Map(faculty.map((f) => [f.id, f.facultyNo]))
+
+  return { term, version, section, ctx, richEntries: entries, facultyNumbers }
 }
 
 /**
@@ -124,7 +139,8 @@ timetableRouter.get(
   "/sections/:id/timetable",
   asyncHandler(async (req, res) => {
     const sectionId = param(req, "id")
-    const { term, section, ctx, richEntries } = await loadContext(sectionId)
+    const { term, version, section, ctx, richEntries, facultyNumbers } =
+      await loadContext(sectionId, versionSpecFromRequest(req))
     const cfg = ctx.timeConfig
 
     const mine = richEntries.filter((e) => e.sectionId === sectionId)
@@ -134,6 +150,7 @@ timetableRouter.get(
 
     res.json({
       term: { id: term.id, label: term.label },
+      version: { id: version.id, kind: version.kind, label: version.label },
       section,
       grid: {
         slots: buildDayGrid(cfg),
@@ -158,6 +175,7 @@ timetableRouter.get(
           subjectId: c.subjectId,
           code: c.subjectCode,
           facultyName: facultyId ? (ctx.names?.faculty?.get(facultyId) ?? null) : null,
+          facultyNo: facultyId ? (facultyNumbers.get(facultyId) ?? null) : null,
         }
       }),
       validation,
@@ -188,7 +206,7 @@ timetableRouter.get(
       })
       .parse(req.query)
 
-    const { section, ctx } = await loadContext(sectionId)
+    const { section, ctx } = await loadContext(sectionId, versionSpecFromRequest(req))
 
     const facultyId = query.subjectId
       ? (ctx.assignments.get(query.subjectId) ?? null)
@@ -230,7 +248,11 @@ timetableRouter.post(
   asyncHandler(async (req, res) => {
     const sectionId = param(req, "id")
     const body = entrySchema.parse(req.body)
-    const { term, section, ctx } = await loadContext(sectionId)
+    const { term, version, section, ctx } = await loadContext(
+      sectionId,
+      versionSpecFromRequest(req)
+    )
+    await assertEditable(version)
 
     const candidate = buildCandidate(sectionId, body, section.homeRoomId, ctx)
     const conflicts = validatePlacement(candidate, ctx)
@@ -241,6 +263,7 @@ timetableRouter.post(
     const created = await prisma.timetableEntry.create({
       data: {
         termId: term.id,
+        versionId: version.id,
         sectionId,
         dayOfWeek: candidate.dayOfWeek,
         startPeriod: candidate.startPeriod,
@@ -265,7 +288,11 @@ timetableRouter.patch(
     if (!existing) throw notFound("Timetable entry")
 
     const body = entrySchema.partial().parse(req.body)
-    const { section, ctx } = await loadContext(existing.sectionId)
+    const { version, section, ctx } = await loadContext(
+      existing.sectionId,
+      existing.versionId
+    )
+    await assertEditable(version)
 
     const merged = {
       dayOfWeek: body.dayOfWeek ?? (existing.dayOfWeek as (typeof DAYS)[number]),
@@ -308,7 +335,18 @@ timetableRouter.patch(
 timetableRouter.delete(
   "/entries/:id",
   asyncHandler(async (req, res) => {
-    await prisma.timetableEntry.delete({ where: { id: param(req, "id") } })
+    const id = param(req, "id")
+    const existing = await prisma.timetableEntry.findUnique({ where: { id } })
+    if (!existing) throw notFound("Timetable entry")
+
+    // The entry's own version decides whether it may be removed — a delete
+    // aimed at the live timetable while a working copy exists is refused.
+    const term = await prisma.academicTerm.findFirstOrThrow({
+      where: { id: existing.termId },
+    })
+    await assertEditable(await resolveVersion(term.id, existing.versionId))
+
+    await prisma.timetableEntry.delete({ where: { id } })
     res.status(204).end()
   })
 )
@@ -321,8 +359,11 @@ timetableRouter.delete(
     const term = await prisma.academicTerm.findFirst({ where: { isActive: true } })
     if (!term) throw new AppError("No active academic term.", 409)
 
+    const version = await resolveVersion(term.id, versionSpecFromRequest(req))
+    await assertEditable(version)
+
     const { count } = await prisma.timetableEntry.deleteMany({
-      where: { termId: term.id, sectionId },
+      where: { versionId: version.id, sectionId },
     })
     res.json({ deleted: count })
   })
@@ -368,7 +409,7 @@ timetableRouter.get(
   "/sections/:id/validate",
   asyncHandler(async (req, res) => {
     const sectionId = param(req, "id")
-    const { ctx, section } = await loadContext(sectionId)
+    const { ctx, section } = await loadContext(sectionId, versionSpecFromRequest(req))
     res.json(
       validateSection(sectionId, ctx, { hasHomeRoom: Boolean(section.homeRoomId) })
     )
@@ -401,8 +442,10 @@ timetableRouter.get(
     })
     if (!faculty) throw notFound("Faculty")
 
+    const version = await resolveVersion(term.id, versionSpecFromRequest(req))
+
     const entries = await prisma.timetableEntry.findMany({
-      where: { termId: term.id, facultyId },
+      where: { versionId: version.id, facultyId },
       include: {
         subject: true,
         room: true,

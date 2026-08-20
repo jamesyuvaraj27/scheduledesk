@@ -1,3 +1,4 @@
+import "./admin-fetch.mjs" // signs in as admin; must come first
 const B = "http://localhost:4000/api"
 
 import { requireEmptyDatabase } from "./guard.mjs"
@@ -41,7 +42,26 @@ const [sec4, sec2] = await Promise.all([
   j("POST", "/sections", { branchId: csm.id, year: 4, name: "a", homeRoomId: r301.id }),
   j("POST", "/sections", { branchId: aiml.id, year: 2, name: "a", homeRoomId: r204.id }),
 ]).then(rs => rs.map(r => r.body))
-await j("POST", "/terms", { year: 2026, semester: 1, label: "2026-27 Sem I", makeActive: true })
+// The timings have to match the sheet or the importer refuses it, which is
+// the point of that check. The sheet is a flat 50-minute day with a 20-minute
+// break after period 2 and a 50-minute lunch after period 5.
+await j("POST", "/terms", {
+  year: 2026,
+  semester: 1,
+  label: "2026-27 Sem I",
+  makeActive: true,
+  timeConfig: {
+    startTime: "08:00",
+    numPeriods: 7,
+    morningPeriodDurationMin: 50,
+    afternoonPeriodDurationMin: 50,
+    breakAfterPeriod: 2,
+    breakDurationMin: 20,
+    lunchAfterPeriod: 5,
+    lunchDurationMin: 50,
+    workingDays: ["MON", "TUE", "WED", "THU", "FRI", "SAT"],
+  },
+})
 
 // ---- preview changes nothing ----
 let r = await j("POST", `/sections/${sec4.id}/import/preview`, { rows: SHEET })

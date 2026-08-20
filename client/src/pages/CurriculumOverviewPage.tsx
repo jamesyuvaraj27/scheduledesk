@@ -53,7 +53,7 @@ export function CurriculumOverviewPage() {
             />
             <div className="flex justify-center">
               <Button asChild size="sm">
-                <Link to="/term-setup">Go to Term Setup</Link>
+                <Link to="/admin/term-setup">Go to Term Setup</Link>
               </Button>
             </div>
           </CardContent>
@@ -95,7 +95,7 @@ export function CurriculumOverviewPage() {
                 {visible.map(({ section, subjectCount, assignedCount, weeklyHours, ready }) => (
                   <li key={section.id}>
                     <Link
-                      to={`/curriculum/${section.id}`}
+                      to={`/admin/curriculum/${section.id}`}
                       className="flex items-center justify-between gap-4 py-2.5 hover:bg-muted/40 -mx-2 px-2 rounded-md transition-colors"
                     >
                       <div className="min-w-0">
@@ -156,7 +156,9 @@ export function CurriculumOverviewPage() {
                     <tbody>
                       {workload.data.faculty.map(({ faculty, weeklyHours, assignments }) => (
                         <tr key={faculty.id} className="border-b hover:bg-muted/40">
-                          <td className="px-3 py-2 font-medium">{faculty.name}</td>
+                          <td className="px-3 py-2 font-medium">
+                            {faculty.facultyNo} — {faculty.name}
+                          </td>
                           <td className="px-3 py-2">
                             <span
                               className={

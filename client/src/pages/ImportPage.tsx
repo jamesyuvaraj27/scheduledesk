@@ -110,7 +110,7 @@ export function ImportPage() {
     <div className="space-y-5">
       <div>
         <Button asChild variant="ghost" size="sm" className="-ml-2 mb-1">
-          <Link to="/curriculum">
+          <Link to="/admin/curriculum">
             <ArrowLeft /> All sections
           </Link>
         </Button>
@@ -218,7 +218,7 @@ export function ImportPage() {
       {result && (
         <ResultPanel
           result={result}
-          onView={() => navigate(`/sections/${sectionId}/timetable`)}
+          onView={() => navigate(`/admin/sections/${sectionId}/timetable`)}
           onAgain={() => {
             setResult(null)
             setRows(null)

@@ -31,13 +31,13 @@ export function SectionTimetablePage() {
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4 print:hidden">
         <Button asChild variant="ghost" size="sm" className="-ml-2">
-          <Link to="/curriculum">
+          <Link to="/admin/curriculum">
             <ArrowLeft /> All sections
           </Link>
         </Button>
         <div className="flex gap-2">
           <Button asChild variant="outline" size="sm">
-            <Link to={`/sections/${sectionId}/builder`}>
+            <Link to={`/admin/sections/${sectionId}/builder`}>
               <Pencil /> Edit
             </Link>
           </Button>
@@ -95,7 +95,7 @@ export function SectionTimetablePage() {
             {legend.map((l) => (
               <div key={l.subjectId} className="flex gap-2">
                 <span className="font-semibold min-w-16">{l.code}:</span>
-                <span>{l.facultyName ?? "—"}</span>
+                <span>{facultyLabel(l)}</span>
               </div>
             ))}
           </div>
@@ -124,7 +124,7 @@ function RoomAllocationGrid({ data }: { data: SectionTimetable }) {
       <div className="flex items-baseline justify-between gap-3 mb-1">
         <p className="text-sm font-semibold">Room Allocation</p>
         <Link
-          to="/rooms"
+          to="/admin/rooms"
           className="text-xs text-muted-foreground hover:text-foreground underline print:hidden"
         >
           Allocate from room timetables
@@ -161,4 +161,10 @@ function RoomAllocationGrid({ data }: { data: SectionTimetable }) {
 
 function toRoman(year: number): string {
   return ["I", "II", "III", "IV"][year - 1] ?? String(year)
+}
+
+/** "FAC003 — Ms. Y. Sireesha", or just the name on older data. */
+function facultyLabel(l: { facultyName: string | null; facultyNo?: string | null }): string {
+  if (!l.facultyName) return "\u2014"
+  return l.facultyNo ? `${l.facultyNo} \u2014 ${l.facultyName}` : l.facultyName
 }

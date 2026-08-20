@@ -38,7 +38,7 @@ export function RoomTimetablePage() {
   // Land on the first room rather than an empty screen.
   React.useEffect(() => {
     if (!roomId && rooms.data?.length) {
-      navigate(`/rooms/${rooms.data[0].id}/timetable`, { replace: true })
+      navigate(`/admin/rooms/${rooms.data[0].id}/timetable`, { replace: true })
     }
   }, [roomId, rooms.data, navigate])
 
@@ -66,7 +66,7 @@ export function RoomTimetablePage() {
         <div className="flex items-center gap-2">
           <select
             value={roomId}
-            onChange={(e) => navigate(`/rooms/${e.target.value}/timetable`)}
+            onChange={(e) => navigate(`/admin/rooms/${e.target.value}/timetable`)}
             className="h-9 rounded-md border bg-background px-2 text-sm"
           >
             {rooms.data.map((r) => (
@@ -208,7 +208,11 @@ function RoomGrid({ roomId }: { roomId: string }) {
               </div>
               <div className="flex gap-2">
                 <dt className="text-muted-foreground w-20">Faculty</dt>
-                <dd>{inspecting.faculty?.name ?? "—"}</dd>
+                <dd>
+                  {inspecting.faculty
+                    ? `${inspecting.faculty.facultyNo ?? ""} ${inspecting.faculty.facultyNo ? "— " : ""}${inspecting.faculty.name}`.trim()
+                    : "—"}
+                </dd>
               </div>
             </dl>
 

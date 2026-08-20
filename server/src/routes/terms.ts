@@ -3,6 +3,7 @@ import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
 import { buildDayGrid, dayEndTime } from "../lib/periods.js"
+import { ensureLiveVersion } from "../lib/versions.js"
 
 export const termsRouter = Router()
 
@@ -96,7 +97,7 @@ termsRouter.post(
         })
       }
 
-      return tx.academicTerm.create({
+      const created = await tx.academicTerm.create({
         data: {
           year: body.year,
           semester: body.semester,
@@ -127,6 +128,11 @@ termsRouter.post(
         },
         include: { timeConfig: true },
       })
+
+      // Every term owns a live timetable from the moment it exists, so there
+      // is never a code path where entries have nowhere to be placed.
+      await ensureLiveVersion(tx, created.id)
+      return created
     })
 
     res.status(201).json(withGrid(term))
@@ -157,6 +163,7 @@ termsRouter.delete(
       prisma.sectionAssignment.deleteMany({ where: { termId: id } }),
       prisma.sectionSubject.deleteMany({ where: { termId: id } }),
       prisma.timeConfig.deleteMany({ where: { termId: id } }),
+      prisma.timetableVersion.deleteMany({ where: { termId: id } }),
       prisma.academicTerm.delete({ where: { id } }),
     ])
 
@@ -358,6 +365,8 @@ termsRouter.post(
         include: { timeConfig: true },
       })
     })
+
+    await ensureLiveVersion(prisma, term.id)
 
     let copiedCurriculumRows = 0
     if (body.copyCurriculumFromTermId) {

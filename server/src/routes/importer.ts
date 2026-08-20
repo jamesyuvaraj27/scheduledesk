@@ -2,6 +2,11 @@ import { Router } from "express"
 import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
+import {
+  assertEditable,
+  resolveVersion,
+  versionSpecFromRequest,
+} from "../lib/versions.js"
 import { buildDayGrid } from "../lib/periods.js"
 import { parseTimetableSheet, normalizeCode } from "../lib/importer.js"
 import { validatePlacement, type Day, type EntryType } from "../lib/scheduling.js"
@@ -50,6 +55,7 @@ importRouter.post(
     const sectionId = param(req, "id")
     const { rows } = gridSchema.parse(req.body)
     const { term, section, timeConfig } = await loadTermAndSection(sectionId)
+    const version = await resolveVersion(term.id, versionSpecFromRequest(req))
 
     const slots = buildDayGrid(timeConfig)
     const parsed = parseTimetableSheet(rows, slots, timeConfig.numPeriods)
@@ -61,7 +67,7 @@ importRouter.post(
     const [subjects, faculty, existing] = await Promise.all([
       prisma.subject.findMany({ where: { branchId: section.branchId } }),
       prisma.faculty.findMany(),
-      prisma.timetableEntry.count({ where: { termId: term.id, sectionId } }),
+      prisma.timetableEntry.count({ where: { versionId: version.id, sectionId } }),
     ])
 
     const subjectByCode = new Map(subjects.map((s) => [s.code.toUpperCase(), s]))
@@ -148,6 +154,11 @@ importRouter.post(
     const body = commitSchema.parse(req.body)
     const { term, section, timeConfig } = await loadTermAndSection(sectionId)
 
+    // Imports write into whichever timetable version the admin is editing —
+    // and are refused outright if that version is locked.
+    const version = await resolveVersion(term.id, versionSpecFromRequest(req))
+    await assertEditable(version)
+
     const slots = buildDayGrid(timeConfig)
     const parsed = parseTimetableSheet(body.rows, slots, timeConfig.numPeriods)
     if (parsed.error) throw new AppError(parsed.error, 422)
@@ -212,8 +223,15 @@ importRouter.post(
         if (existing) {
           facultyId = existing.id
         } else if (body.createMissing) {
+          // A faculty member invented from a sheet legend still gets a real
+          // unique number, so they are a proper master-data record rather than
+          // a name floating in a timetable.
           const madeFaculty = await prisma.faculty.create({
-            data: { name: legendName.trim(), departmentId: section.branch.departmentId },
+            data: {
+              facultyNo: await nextFacultyNo(),
+              name: legendName.trim(),
+              departmentId: section.branch.departmentId,
+            },
           })
           facultyId = madeFaculty.id
           created.faculty++
@@ -266,7 +284,9 @@ importRouter.post(
     /* --- 2. clear existing entries if asked --- */
 
     if (body.replaceExisting) {
-      await prisma.timetableEntry.deleteMany({ where: { termId: term.id, sectionId } })
+      await prisma.timetableEntry.deleteMany({
+        where: { versionId: version.id, sectionId },
+      })
     }
 
     /* --- 3. place entries, each one checked by the conflict engine --- */
@@ -277,7 +297,7 @@ importRouter.post(
     // Load the scheduling context ONCE, then keep it current in memory as we
     // go. Re-reading it per entry would mean hundreds of round-trips for a
     // single sheet.
-    const ctx = await buildContext(term.id, sectionId)
+    const ctx = await buildContext(term.id, version.id, sectionId)
 
     for (const entry of parsed.entries) {
       const subjectId = subjectIdByCode.get(entry.code)
@@ -310,7 +330,7 @@ importRouter.post(
       }
 
       const saved = await prisma.timetableEntry.create({
-        data: { termId: term.id, ...placement },
+        data: { termId: term.id, versionId: version.id, ...placement },
       })
       created.entries++
 
@@ -330,11 +350,22 @@ importRouter.post(
   })
 )
 
+/** The next free FACnnn — same rule the Faculty master data screen uses. */
+async function nextFacultyNo(): Promise<string> {
+  const existing = await prisma.faculty.findMany({ select: { facultyNo: true } })
+  let highest = 0
+  for (const { facultyNo } of existing) {
+    const match = /^FAC(\d+)$/.exec(facultyNo)
+    if (match) highest = Math.max(highest, Number(match[1]))
+  }
+  return `FAC${String(highest + 1).padStart(3, "0")}`
+}
+
 /** Minimal scheduling context for import-time validation. */
-async function buildContext(termId: string, sectionId: string) {
+async function buildContext(termId: string, versionId: string, sectionId: string) {
   const [entries, sectionSubjects, assignments, rooms, faculty, sections] =
     await Promise.all([
-      prisma.timetableEntry.findMany({ where: { termId } }),
+      prisma.timetableEntry.findMany({ where: { versionId } }),
       prisma.sectionSubject.findMany({
         where: { termId, sectionId },
         include: { subject: true },

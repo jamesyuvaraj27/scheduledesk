@@ -274,7 +274,9 @@ function ReportCell({ cell }: { cell: DayCell<TimetableEntry> }) {
           !entry.faculty && "text-muted-foreground italic"
         )}
       >
-        {entry.faculty?.name ?? "Faculty: Not Assigned"}
+        {entry.faculty
+          ? `${entry.faculty.facultyNo} — ${entry.faculty.name}`
+          : "Faculty: Not Assigned"}
       </div>
       <div
         className={cn(

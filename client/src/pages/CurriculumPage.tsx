@@ -59,7 +59,7 @@ export function CurriculumPage() {
     <div className="space-y-5">
       <div>
         <Button asChild variant="ghost" size="sm" className="-ml-2 mb-1">
-          <Link to="/curriculum">
+          <Link to="/admin/curriculum">
             <ArrowLeft /> All sections
           </Link>
         </Button>
@@ -69,12 +69,12 @@ export function CurriculumPage() {
           </h1>
           <div className="flex gap-2">
             <Button asChild variant="outline" size="sm">
-              <Link to={`/sections/${sectionId}/import`}>
+              <Link to={`/admin/sections/${sectionId}/import`}>
                 <Upload /> Import sheet
               </Link>
             </Button>
             <Button asChild size="sm">
-              <Link to={`/sections/${sectionId}/builder`}>
+              <Link to={`/admin/sections/${sectionId}/builder`}>
                 <CalendarDays /> Build timetable
               </Link>
             </Button>
@@ -91,7 +91,7 @@ export function CurriculumPage() {
           <TriangleAlert className="size-4 mt-0.5 text-warning shrink-0" />
           <span>
             This section has no home classroom. Set one in{" "}
-            <Link to="/master-data" className="underline">
+            <Link to="/admin/master-data" className="underline">
               Master Data
             </Link>{" "}
             — theory classes need a room to check clashes against.
@@ -244,7 +244,7 @@ function CurriculumTableRow({
             <option value="">— not assigned —</option>
             {row.eligibleFaculty.map((f) => (
               <option key={f.id} value={f.id}>
-                {f.name}
+                {f.facultyNo} — {f.name}
               </option>
             ))}
           </Select>

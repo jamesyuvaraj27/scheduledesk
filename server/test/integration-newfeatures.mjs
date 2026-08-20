@@ -5,6 +5,7 @@
  * Every row it creates is deleted again at the end — the app must never
  * carry demo data.
  */
+import "./admin-fetch.mjs" // signs in as admin; must come first
 const BASE = process.env.API ?? "http://localhost:4000/api"
 
 let pass = 0
