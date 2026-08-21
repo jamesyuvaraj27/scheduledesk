@@ -1,10 +1,11 @@
 import { NavLink, Outlet, Link } from "react-router-dom"
-import { CalendarDays, LogIn, UserCheck } from "lucide-react"
+import { CalendarDays, ClipboardList, LogIn, UserCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useAdminAuth } from "@/context/AdminAuth"
 
 const navItems = [
   { to: "/", label: "Timetable", icon: CalendarDays, end: true },
+  { to: "/reports/day-wise", label: "Day-wise Report", icon: ClipboardList },
   { to: "/adjustment", label: "Class Adjustment", icon: UserCheck },
 ]
 

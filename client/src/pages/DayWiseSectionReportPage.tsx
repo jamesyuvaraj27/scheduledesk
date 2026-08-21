@@ -8,23 +8,24 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { buildDayCells, displayTime, DAY_LABEL, type DayCell } from "@/components/timetable/gridLayout"
-import type { Day, GridSlot, PrintAllResponse, TimetableEntry } from "@/lib/types"
+import type { Day, GridSlot, PublicDayWiseReport, PublicTimetableEntry } from "@/lib/types"
 
 /**
- * VIEW-ONLY report: pick a day, a year, and one or more sections, and see
- * just those sections' timetable for that day — one row per section.
+ * PUBLIC, VIEW-ONLY report: pick a day, a year, and one or more sections,
+ * and see just those sections' timetable for that day — one row per
+ * section. No login required.
  *
- * This reads the same data as the Print-all page (`/print/sections`, no
- * `year` filter so every section for every year comes back in one call) and
- * reuses the existing grid-layout helpers. It never writes anything: there
- * is no mutation, no drag-and-drop, no edit affordance anywhere on this
- * page. Nothing about section timetables, assignments, rooms, or master
- * data is touched by this file.
+ * This reads `/public/day-wise-report` — the public, LIVE-only counterpart
+ * of the admin Print-all page's data — and reuses the existing grid-layout
+ * helpers. It never writes anything: there is no mutation, no
+ * drag-and-drop, no edit affordance anywhere on this page. Nothing about
+ * section timetables, assignments, rooms, or master data is touched by this
+ * file.
  */
 export function DayWiseSectionReportPage() {
   const { data, isLoading, error } = useQuery({
-    queryKey: ["print-sections", "day-wise-all"],
-    queryFn: () => api.get<PrintAllResponse>("/print/sections"),
+    queryKey: ["public-day-wise-report"],
+    queryFn: () => api.get<PublicDayWiseReport>("/public/day-wise-report"),
   })
 
   const [day, setDay] = React.useState<Day | "">("")
@@ -190,7 +191,7 @@ function ReportTable({
 }: {
   slots: GridSlot[]
   day: Day
-  rows: PrintAllResponse["sections"]
+  rows: PublicDayWiseReport["sections"]
 }) {
   return (
     <div className="overflow-x-auto">
@@ -241,7 +242,7 @@ function ReportTable({
   )
 }
 
-function ReportCell({ cell }: { cell: DayCell<TimetableEntry> }) {
+function ReportCell({ cell }: { cell: DayCell<PublicTimetableEntry> }) {
   if (cell.kind === "pause") {
     return (
       <td className="border bg-muted px-1 py-2 text-center text-[11px] font-semibold tracking-wide text-muted-foreground">
@@ -274,9 +275,7 @@ function ReportCell({ cell }: { cell: DayCell<TimetableEntry> }) {
           !entry.faculty && "text-muted-foreground italic"
         )}
       >
-        {entry.faculty
-          ? `${entry.faculty.facultyNo} — ${entry.faculty.name}`
-          : "Faculty: Not Assigned"}
+        {entry.faculty ? entry.faculty.label : "Faculty: Not Assigned"}
       </div>
       <div
         className={cn(
@@ -291,7 +290,7 @@ function ReportCell({ cell }: { cell: DayCell<TimetableEntry> }) {
 }
 
 /** Subject/activity label shown on the top line of a cell. */
-function activityLabel(entry: TimetableEntry): string {
+function activityLabel(entry: PublicTimetableEntry): string {
   if (entry.subject) {
     return entry.entryType === "LAB" ? `${entry.subject.code} LAB` : entry.subject.code
   }

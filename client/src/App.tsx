@@ -53,6 +53,7 @@ function App() {
         {/* ---------------- Public: no login, read-only ---------------- */}
         <Route element={<PublicLayout />}>
           <Route index element={<StudentTimetablePage />} />
+          <Route path="reports/day-wise" element={<DayWiseSectionReportPage />} />
           <Route path="adjustment" element={<ClassAdjustmentPage />} />
         </Route>
         <Route path="login" element={<LoginPage />} />
@@ -87,7 +88,6 @@ function App() {
           <Route path="faculty/:facultyId" element={<FacultyTimetablePage />} />
           <Route path="working-timetable" element={<WorkingTimetablePage />} />
           <Route path="print" element={<PrintAllPage />} />
-          <Route path="reports/day-wise" element={<DayWiseSectionReportPage />} />
           <Route path="reset" element={<ResetYearPage />} />
         </Route>
 
@@ -98,7 +98,9 @@ function App() {
         <Route path="rooms/*" element={<Navigate to="/admin/rooms" replace />} />
         <Route path="faculty/*" element={<Navigate to="/admin/faculty" replace />} />
         <Route path="print" element={<Navigate to="/admin/print" replace />} />
-        <Route path="reports/*" element={<Navigate to="/admin/reports/day-wise" replace />} />
+        {/* Day-wise Report moved out of Admin and into Public — old admin
+            bookmarks land on the real (now public) page instead of 404ing. */}
+        <Route path="admin/reports/day-wise" element={<Navigate to="/reports/day-wise" replace />} />
         <Route path="reset" element={<Navigate to="/admin/reset" replace />} />
         <Route path="sections/*" element={<Navigate to="/admin" replace />} />
 

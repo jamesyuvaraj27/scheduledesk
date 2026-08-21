@@ -467,59 +467,71 @@ export interface PublicSectionTimetable {
   legend: LegendRow[]
 }
 
-/** One row of a faculty member's day on the Class Adjustment page. */
+/* --------------------------- Day-wise report ------------------------------ */
+
+/** One section row of the public day-wise report. */
+export interface PublicDayWiseSection {
+  section: {
+    id: string
+    name: string
+    year: number
+    label: string
+    branch: { code: string; name: string }
+    department: { code: string }
+    homeRoom: { id: string; name: string } | null
+  }
+  entries: PublicTimetableEntry[]
+}
+
+export interface PublicDayWiseReport {
+  term: { id: string; label: string }
+  published: { label: string; publishedAt: string | null }
+  grid: TimetableGrid
+  sections: PublicDayWiseSection[]
+}
+
+/* ------------------------------ Class adjustment --------------------------- */
+
+/** What's on at one period/break/lunch slot, when a faculty member is busy. */
+export interface AdjustmentSlotDetail {
+  subjectCode: string | null
+  subjectName: string | null
+  sectionId: string
+  sectionLabel: string
+  sectionDepartmentId: string
+  room: string | null
+  entryType: EntryType
+}
+
+/** One slot of a faculty member's day on the Class Adjustment page. */
 export interface AdjustmentDaySlot {
   kind: "PERIOD" | "BREAK" | "LUNCH"
   period: number | null
   startTime: string
   endTime: string
-  isTarget: boolean
   busy: boolean
-  label: string
-  detail: {
-    subject: string | null
-    section: string
-    room: string | null
-    entryType: string
-  } | null
+  detail: AdjustmentSlotDetail | null
 }
 
-export interface AdjustmentCandidate {
-  faculty: PublicFacultyRef & { departmentCode: string }
-  teachesThisSubject: boolean
-  sameDepartment: boolean
-  periodsTaughtToday: number
+export interface AdjustmentFacultyRef extends PublicFacultyRef {
+  departmentId: string
+  departmentCode: string
+  departmentName: string
+}
+
+/** One faculty member's complete day, plus every section they teach all week. */
+export interface AdjustmentFacultyRow {
+  faculty: AdjustmentFacultyRef
   day: AdjustmentDaySlot[]
+  sectionIds: string[]
+  periodsTaughtToday: number
 }
 
 export interface AdjustmentResponse {
   readOnly: true
   term: { id: string; label: string }
   published: { label: string; publishedAt: string | null }
-  query: {
-    dayOfWeek: Day
-    dayLabel: string
-    startPeriod: number
-    startTime: string | null
-    endTime: string | null
-  }
-  section: {
-    id: string
-    label: string
-    year: number
-    branchCode: string
-    homeRoom: string | null
-  }
-  selectedClass: {
-    entryType: EntryType
-    subject: { code: string; name: string } | null
-    regularFaculty: PublicFacultyRef | null
-    room: string | null
-    periodSpan: number
-    startPeriod: number
-  } | null
+  query: { dayOfWeek: Day; dayLabel: string }
   grid: { slots: GridSlot[]; workingDays: Day[]; numPeriods: number }
-  availableFaculty: AdjustmentCandidate[]
-  busyCount: number
-  totalActiveFaculty: number
+  faculty: AdjustmentFacultyRow[]
 }

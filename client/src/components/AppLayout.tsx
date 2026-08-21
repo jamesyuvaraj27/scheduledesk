@@ -15,7 +15,6 @@ const navItems = [
   { to: "/admin/rooms", label: "Rooms" },
   { to: "/admin/working-timetable", label: "Working Timetable" },
   { to: "/admin/print", label: "Print" },
-  { to: "/admin/reports/day-wise", label: "Day Report" },
   { to: "/admin/reset", label: "Reset Year" },
 ]
 

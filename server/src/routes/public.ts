@@ -2,8 +2,8 @@
  * The public side of ScheduleDesk.
  *
  * Everything here is read-only and needs no login: the student/faculty
- * timetable view and the class-adjustment lookup a faculty member uses when
- * they are going on leave.
+ * timetable view, the day-wise section report, and the class-adjustment
+ * lookup a faculty member uses when they are going on leave.
  *
  * Two rules hold for every route in this file:
  *
@@ -214,29 +214,110 @@ publicRouter.get(
 )
 
 /* -------------------------------------------------------------------------- */
+/*                    Day-wise section report (all sections)                  */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every section's timetable for the LIVE version, in one response. This is
+ * the public counterpart of the admin Print-all page's data
+ * (GET /api/print/sections in overview.ts) — no admin gate, always LIVE, no
+ * version override — so a student, faculty member, or coordinator can pick a
+ * day/year and one or more sections without signing in. The page filters
+ * this down to just the sections that were checked; nothing here is written
+ * or changed.
+ */
+publicRouter.get(
+  "/day-wise-report",
+  asyncHandler(async (_req, res) => {
+    const { term, cfg, live } = await liveContext()
+
+    const [sections, entries] = await Promise.all([
+      prisma.section.findMany({
+        orderBy: [{ year: "asc" }, { name: "asc" }],
+        include: { branch: { include: { department: true } }, homeRoom: true },
+      }),
+      prisma.timetableEntry.findMany({
+        where: { versionId: live.id },
+        include: { subject: true, faculty: true, room: true },
+        orderBy: [{ dayOfWeek: "asc" }, { startPeriod: "asc" }],
+      }),
+    ])
+
+    res.json({
+      term: { id: term.id, label: term.label },
+      published: { label: live.label, publishedAt: live.publishedAt ?? null },
+      grid: {
+        slots: buildDayGrid(cfg),
+        endTime: dayEndTime(cfg),
+        workingDays: cfg.workingDays,
+        numPeriods: cfg.numPeriods,
+      },
+      sections: sections.map((section) => ({
+        section: {
+          id: section.id,
+          name: section.name,
+          year: section.year,
+          label: sectionLabel(section),
+          branch: { code: section.branch.code, name: section.branch.name },
+          department: { code: section.branch.department.code },
+          homeRoom: section.homeRoom
+            ? { id: section.homeRoom.id, name: section.homeRoom.name }
+            : null,
+        },
+        entries: entries
+          .filter((e) => e.sectionId === section.id)
+          .map((e) => ({
+            id: e.id,
+            dayOfWeek: e.dayOfWeek,
+            startPeriod: e.startPeriod,
+            periodSpan: e.periodSpan,
+            entryType: e.entryType,
+            subject: e.subject
+              ? { id: e.subject.id, code: e.subject.code, name: e.subject.name }
+              : null,
+            faculty: e.faculty
+              ? {
+                  id: e.faculty.id,
+                  facultyNo: e.faculty.facultyNo,
+                  name: e.faculty.name,
+                  label: facultyLabel(e.faculty),
+                }
+              : null,
+            room: e.room ? { id: e.room.id, name: e.room.name } : null,
+          })),
+      })),
+    })
+  })
+)
+
+/* -------------------------------------------------------------------------- */
 /*                     Class adjustment (faculty on leave)                    */
 /* -------------------------------------------------------------------------- */
 
 /**
- * "I'm on leave Tuesday 3rd hour for IV CSM-A. Who's free?"
+ * "I'm on leave Tuesday — who can I ask to take my classes?"
  *
- * Availability is derived from the live timetable, never from a list somebody
- * has to maintain: a faculty member is free in a period if they have no entry
- * covering it that day. Each free person is returned with their whole day, so
- * the HoD can see at a glance whether swapping them in is reasonable.
+ * One query per DAY, not per faculty member or period: every active faculty
+ * member's complete day for that day is returned in a single response, along
+ * with every section each of them teaches anywhere in the week (that's what
+ * "already handles this section" means — a standing fact, not a same-day
+ * coincidence). The client picks the faculty member going on leave, lets
+ * them click the hour they need covered, and derives the "class to adjust"
+ * plus the Same Section / Department / College candidate tiers entirely from
+ * this one payload — nothing here is ever re-fetched just because a
+ * different faculty member or period was picked.
+ *
+ * Busy people are never filtered out and there is no ranking by who happens
+ * to be free — every candidate's whole day is returned exactly as it is,
+ * "FREE" or the real class, never "ENGAGED", so a human can compare complete
+ * workloads and decide who to approach.
  *
  * Nothing is written. This endpoint suggests; a human decides.
  */
 publicRouter.get(
   "/adjustment",
   asyncHandler(async (req, res) => {
-    const query = z
-      .object({
-        sectionId: z.string().min(1, "Choose a section"),
-        dayOfWeek: z.enum(DAYS),
-        startPeriod: z.coerce.number().int().min(1).max(12),
-      })
-      .parse(req.query)
+    const query = z.object({ dayOfWeek: z.enum(DAYS) }).parse(req.query)
 
     const { term, cfg, live } = await liveContext()
 
@@ -246,57 +327,44 @@ publicRouter.get(
         400
       )
     }
-    if (query.startPeriod > cfg.numPeriods) {
-      throw new AppError(`The day only has ${cfg.numPeriods} periods.`, 400)
+
+    const [dayEntries, weekPairs, allFaculty] = await Promise.all([
+      // Everyone's classes on THIS day — lays out each faculty member's
+      // complete day timetable.
+      prisma.timetableEntry.findMany({
+        where: { versionId: live.id, dayOfWeek: query.dayOfWeek },
+        include: {
+          subject: true,
+          room: true,
+          section: { include: { branch: { include: { department: true } } } },
+        },
+        orderBy: { startPeriod: "asc" },
+      }),
+      // Which sections each faculty member teaches ANYWHERE this week — this
+      // is what makes someone "already handle that section", not merely a
+      // same-day coincidence.
+      prisma.timetableEntry.findMany({
+        where: { versionId: live.id, facultyId: { not: null } },
+        select: { facultyId: true, sectionId: true },
+        distinct: ["facultyId", "sectionId"],
+      }),
+      prisma.faculty.findMany({
+        where: { isActive: true },
+        include: { department: true },
+        orderBy: { facultyNo: "asc" },
+      }),
+    ])
+
+    const sectionsByFaculty = new Map<string, Set<string>>()
+    for (const row of weekPairs) {
+      if (!row.facultyId) continue
+      const set = sectionsByFaculty.get(row.facultyId) ?? new Set<string>()
+      set.add(row.sectionId)
+      sectionsByFaculty.set(row.facultyId, set)
     }
-
-    const section = await prisma.section.findUnique({
-      where: { id: query.sectionId },
-      include: { branch: { include: { department: true } }, homeRoom: true },
-    })
-    if (!section) throw notFound("Section")
-
-    // The whole day, every section — one query, then everything else is done
-    // in memory.
-    const dayEntries = await prisma.timetableEntry.findMany({
-      where: { versionId: live.id, dayOfWeek: query.dayOfWeek },
-      include: {
-        subject: true,
-        faculty: true,
-        room: true,
-        section: { include: { branch: true } },
-      },
-      orderBy: { startPeriod: "asc" },
-    })
 
     const covers = (e: { startPeriod: number; periodSpan: number }, period: number) =>
       period >= e.startPeriod && period < e.startPeriod + e.periodSpan
-
-    /* ---- the class that needs covering ---- */
-
-    const target =
-      dayEntries.find(
-        (e) => e.sectionId === section.id && covers(e, query.startPeriod)
-      ) ?? null
-
-    /* ---- who is busy in that period ---- */
-
-    const busyFacultyIds = new Set(
-      dayEntries
-        .filter((e) => e.facultyId && covers(e, query.startPeriod))
-        .map((e) => e.facultyId!)
-    )
-
-    const allFaculty = await prisma.faculty.findMany({
-      where: { isActive: true },
-      include: {
-        department: true,
-        eligibleSubjects: { select: { subjectId: true } },
-      },
-      orderBy: { facultyNo: "asc" },
-    })
-
-    const free = allFaculty.filter((f) => !busyFacultyIds.has(f.id))
 
     const slots = buildDayGrid(cfg)
 
@@ -306,15 +374,16 @@ publicRouter.get(
         if (slot.kind !== "PERIOD" || slot.period === null) {
           return {
             kind: slot.kind,
-            period: null,
+            period: null as number | null,
             startTime: slot.startTime,
             endTime: slot.endTime,
-            isTarget: false,
             busy: false,
-            label: slot.kind === "BREAK" ? "BREAK" : "LUNCH",
             detail: null as null | {
-              subject: string | null
-              section: string
+              subjectCode: string | null
+              subjectName: string | null
+              sectionId: string
+              sectionLabel: string
+              sectionDepartmentId: string
               room: string | null
               entryType: string
             },
@@ -330,21 +399,14 @@ publicRouter.get(
           period: slot.period,
           startTime: slot.startTime,
           endTime: slot.endTime,
-          isTarget: slot.period === query.startPeriod,
           busy: Boolean(entry),
-          label: entry
-            ? [
-                entry.subject?.code ?? entry.entryType,
-                sectionLabel(entry.section),
-                entry.room?.name,
-              ]
-                .filter(Boolean)
-                .join(" — ")
-            : "FREE",
           detail: entry
             ? {
-                subject: entry.subject?.code ?? entry.entryType,
-                section: sectionLabel(entry.section),
+                subjectCode: entry.subject?.code ?? null,
+                subjectName: entry.subject?.name ?? null,
+                sectionId: entry.sectionId,
+                sectionLabel: sectionLabel(entry.section),
+                sectionDepartmentId: entry.section.branch.departmentId,
                 room: entry.room?.name ?? null,
                 entryType: entry.entryType,
               }
@@ -352,44 +414,23 @@ publicRouter.get(
         }
       })
 
-    const targetSubjectId = target?.subjectId ?? null
-
-    const candidates = free.map((f) => {
+    const faculty = allFaculty.map((f) => {
       const day = dayFor(f.id)
-      const teaching = day.filter((s) => s.kind === "PERIOD" && s.busy).length
-      const eligible = targetSubjectId
-        ? f.eligibleSubjects.some((es) => es.subjectId === targetSubjectId)
-        : false
-
       return {
         faculty: {
           id: f.id,
           facultyNo: f.facultyNo,
           name: f.name,
-          label: facultyLabel(f),
+          label: `${f.facultyNo} — ${f.name}`,
+          departmentId: f.departmentId,
           departmentCode: f.department.code,
+          departmentName: f.department.name,
         },
-        // Why this person is worth considering, in the order a human would.
-        teachesThisSubject: eligible,
-        sameDepartment: f.departmentId === section.branch.departmentId,
-        periodsTaughtToday: teaching,
         day,
+        sectionIds: [...(sectionsByFaculty.get(f.id) ?? [])],
+        periodsTaughtToday: day.filter((s) => s.kind === "PERIOD" && s.busy).length,
       }
     })
-
-    candidates.sort((a, b) => {
-      if (a.teachesThisSubject !== b.teachesThisSubject) {
-        return a.teachesThisSubject ? -1 : 1
-      }
-      if (a.sameDepartment !== b.sameDepartment) return a.sameDepartment ? -1 : 1
-      if (a.periodsTaughtToday !== b.periodsTaughtToday) {
-        return a.periodsTaughtToday - b.periodsTaughtToday
-      }
-      return a.faculty.facultyNo.localeCompare(b.faculty.facultyNo)
-    })
-
-    const targetSlot =
-      slots.find((s) => s.kind === "PERIOD" && s.period === query.startPeriod) ?? null
 
     res.json({
       readOnly: true,
@@ -398,42 +439,9 @@ publicRouter.get(
       query: {
         dayOfWeek: query.dayOfWeek,
         dayLabel: DAY_LABELS[query.dayOfWeek] ?? query.dayOfWeek,
-        startPeriod: query.startPeriod,
-        startTime: targetSlot?.startTime ?? null,
-        endTime: targetSlot?.endTime ?? null,
       },
-      section: {
-        id: section.id,
-        label: sectionLabel(section),
-        year: section.year,
-        branchCode: section.branch.code,
-        homeRoom: section.homeRoom?.name ?? null,
-      },
-      // What is actually scheduled then — null means the section is already
-      // free that hour and nothing needs covering.
-      selectedClass: target
-        ? {
-            entryType: target.entryType,
-            subject: target.subject
-              ? { code: target.subject.code, name: target.subject.name }
-              : null,
-            regularFaculty: target.faculty
-              ? {
-                  id: target.faculty.id,
-                  facultyNo: target.faculty.facultyNo,
-                  name: target.faculty.name,
-                  label: facultyLabel(target.faculty),
-                }
-              : null,
-            room: target.room?.name ?? null,
-            periodSpan: target.periodSpan,
-            startPeriod: target.startPeriod,
-          }
-        : null,
       grid: { slots, workingDays: cfg.workingDays, numPeriods: cfg.numPeriods },
-      availableFaculty: candidates,
-      busyCount: busyFacultyIds.size,
-      totalActiveFaculty: allFaculty.length,
+      faculty,
     })
   })
 )
