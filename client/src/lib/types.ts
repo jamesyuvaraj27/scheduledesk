@@ -507,6 +507,8 @@ export interface PublicMeta {
   grid: TimetableGrid
   days: { value: Day; label: string }[]
   years: { year: number; roman: string; sections: PublicSectionRef[] }[]
+  /** Active faculty, ordered by name — the Faculty Timetable page selector. */
+  faculty: PublicFacultyRef[]
 }
 
 export interface PublicTimetableEntry {
@@ -537,6 +539,43 @@ export interface PublicSectionTimetable {
   entries: PublicTimetableEntry[]
   /** Subject code -> faculty, printed under the grid. */
   legend: PublicLegendRow[]
+}
+
+/**
+ * One faculty member's week, public and read-only — the same shape as the
+ * admin FacultyTimetable, minus `facultyNo`. When a Combined Section puts
+ * this teacher in two sections at once, `entries` simply has two rows for
+ * that hour (one per section); the grid's `lanes` prop draws the second as
+ * an extra row. A Shared Room never adds a row here, because the room's
+ * *other* occupant has a different facultyId and so never appears in this
+ * facultyId-filtered list.
+ */
+export interface PublicFacultyTimetable {
+  term: { id: string; label: string }
+  published: { label: string; publishedAt: string | null }
+  faculty: PublicFacultyRef & { departmentCode: string; departmentName: string }
+  grid: TimetableGrid
+  entries: {
+    id: string
+    dayOfWeek: Day
+    startPeriod: number
+    periodSpan: number
+    entryType: EntryType
+    subject: { id: string; code: string; name: string } | null
+    room: { id: string; name: string } | null
+    section: {
+      id: string
+      name: string
+      year: number
+      branchCode: string
+      departmentCode: string
+    }
+  }[]
+  summary: {
+    weeklyPeriods: number
+    freePeriods: number
+    byDay: Record<string, number>
+  }
 }
 
 /* --------------------------- Day-wise report ------------------------------ */

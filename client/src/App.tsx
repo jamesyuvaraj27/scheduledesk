@@ -5,6 +5,7 @@ import { PublicLayout } from "@/components/PublicLayout"
 import { AdminAuthProvider, useAdminAuth } from "@/context/AdminAuth"
 import { TimetableVersionProvider } from "@/context/TimetableVersion"
 import { StudentTimetablePage } from "@/pages/StudentTimetablePage"
+import { PublicFacultyTimetablePage } from "@/pages/PublicFacultyTimetablePage"
 import { ClassAdjustmentPage } from "@/pages/ClassAdjustmentPage"
 import { LoginPage } from "@/pages/LoginPage"
 import { DashboardPage } from "@/pages/DashboardPage"
@@ -55,6 +56,7 @@ function App() {
         {/* ---------------- Public: no login, read-only ---------------- */}
         <Route element={<PublicLayout />}>
           <Route index element={<StudentTimetablePage />} />
+          <Route path="faculty" element={<PublicFacultyTimetablePage />} />
           <Route path="reports/day-wise" element={<DayWiseSectionReportPage />} />
           <Route path="adjustment" element={<ClassAdjustmentPage />} />
         </Route>

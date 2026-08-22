@@ -99,10 +99,18 @@ publicRouter.get(
   asyncHandler(async (_req, res) => {
     const { term, cfg, live } = await liveContext()
 
-    const sections = await prisma.section.findMany({
-      orderBy: [{ year: "asc" }, { name: "asc" }],
-      include: { branch: true },
-    })
+    const [sections, faculty] = await Promise.all([
+      prisma.section.findMany({
+        orderBy: [{ year: "asc" }, { name: "asc" }],
+        include: { branch: true },
+      }),
+      // Active faculty only, ordered by name — the selector for the public
+      // Faculty Timetable page. facultyNo is never sent (rule 3 above).
+      prisma.faculty.findMany({
+        where: { isActive: true },
+        orderBy: { name: "asc" },
+      }),
+    ])
 
     const years = [...new Set(sections.map((s) => s.year))]
       .sort((a, b) => a - b)
@@ -134,6 +142,11 @@ publicRouter.get(
         label: DAY_LABELS[d] ?? d,
       })),
       years,
+      faculty: faculty.map((f) => ({
+        id: f.id,
+        name: f.name,
+        label: facultyLabel(f) ?? f.name,
+      })),
     })
   })
 )
@@ -220,6 +233,101 @@ publicRouter.get(
         room: e.room ? { id: e.room.id, name: e.room.name } : null,
       })),
       legend,
+    })
+  })
+)
+
+/* -------------------------------------------------------------------------- */
+/*                        Faculty individual timetable                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A faculty member's week, public and read-only — the same derived query as
+ * the admin Faculty Timetable (`GET /faculty/:id/timetable` in
+ * timetable.ts), pinned to the LIVE version and stripped of `facultyNo`
+ * (rule 3 above). Nothing is stored for this: it is entries WHERE
+ * facultyId = X, exactly like the admin page.
+ *
+ * Combined sections need no special handling here. One teacher taking one
+ * subject to two sections at once is just two TimetableEntry rows sharing
+ * facultyId, dayOfWeek and startPeriod — this query returns both, and the
+ * client's lane layout (the same `lanes` TimetableTable prop the admin page
+ * uses) draws the second as an extra row on just that hour.
+ *
+ * A Shared Room, by contrast, is two different faculty members in one room —
+ * from either one's own `facultyId`-filtered query there is only ever one
+ * entry at that hour, so no extra lane appears and no faculty sees a class
+ * that isn't theirs. That's a consequence of filtering by facultyId, not
+ * something coded here specially.
+ */
+publicRouter.get(
+  "/faculty/:id/timetable",
+  asyncHandler(async (req, res) => {
+    const facultyId = param(req, "id")
+    const { term, cfg, live } = await liveContext()
+
+    const faculty = await prisma.faculty.findUnique({
+      where: { id: facultyId },
+      include: { department: true },
+    })
+    if (!faculty) throw notFound("Faculty")
+
+    const entries = await prisma.timetableEntry.findMany({
+      where: { versionId: live.id, facultyId },
+      include: {
+        subject: true,
+        room: true,
+        section: { include: { branch: { include: { department: true } } } },
+      },
+      orderBy: [{ dayOfWeek: "asc" }, { startPeriod: "asc" }],
+    })
+
+    const byDay: Record<string, number> = {}
+    for (const e of entries) {
+      byDay[e.dayOfWeek] = (byDay[e.dayOfWeek] ?? 0) + e.periodSpan
+    }
+    const totalPeriods = cfg.workingDays.length * cfg.numPeriods
+    const taught = entries.reduce((n, e) => n + e.periodSpan, 0)
+
+    res.json({
+      term: { id: term.id, label: term.label },
+      published: { label: live.label, publishedAt: live.publishedAt ?? null },
+      faculty: {
+        id: faculty.id,
+        name: faculty.name,
+        label: facultyLabel(faculty) ?? faculty.name,
+        departmentCode: faculty.department.code,
+        departmentName: faculty.department.name,
+      },
+      grid: {
+        slots: buildDayGrid(cfg),
+        endTime: dayEndTime(cfg),
+        workingDays: cfg.workingDays,
+        numPeriods: cfg.numPeriods,
+      },
+      entries: entries.map((e) => ({
+        id: e.id,
+        dayOfWeek: e.dayOfWeek,
+        startPeriod: e.startPeriod,
+        periodSpan: e.periodSpan,
+        entryType: e.entryType,
+        subject: e.subject
+          ? { id: e.subject.id, code: e.subject.code, name: e.subject.name }
+          : null,
+        room: e.room ? { id: e.room.id, name: e.room.name } : null,
+        section: {
+          id: e.section.id,
+          name: e.section.name,
+          year: e.section.year,
+          branchCode: e.section.branch.code,
+          departmentCode: e.section.branch.department.code,
+        },
+      })),
+      summary: {
+        weeklyPeriods: taught,
+        freePeriods: totalPeriods - taught,
+        byDay,
+      },
     })
   })
 )
