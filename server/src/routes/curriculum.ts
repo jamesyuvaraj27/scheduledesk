@@ -2,6 +2,7 @@ import { Router } from "express"
 import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
+import { ACTIVITY_TYPES, ACTIVITY_WEEKLY_HOURS } from "../lib/scheduling.js"
 
 export const curriculumRouter = Router()
 
@@ -110,9 +111,11 @@ curriculumRouter.get(
         subjects: rows.length,
         weeklyHours: totalWeeklyHours,
         missingFaculty,
-        // Library + Seminar + Counseling are one hour each per week and are
-        // placed directly on the grid, not configured as subjects.
-        weeklyActivityHours: 3,
+        // Library, Seminar, Counseling and Sports are one hour each per week
+        // and are placed directly on the grid, not configured as subjects —
+        // derived from the engine's own activity list so this can never drift
+        // out of step with it.
+        weeklyActivityHours: ACTIVITY_TYPES.length * ACTIVITY_WEEKLY_HOURS,
       },
     })
   })

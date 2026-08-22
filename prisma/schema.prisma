@@ -261,6 +261,7 @@ enum EntryType {
   LIBRARY
   SEMINAR
   COUNSELING
+  SPORTS
 }
 
 enum DayOfWeek {

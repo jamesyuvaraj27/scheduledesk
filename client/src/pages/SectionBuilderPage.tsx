@@ -27,6 +27,7 @@ interface Tool {
 }
 
 const ACTIVITY_TOOLS: Tool[] = [
+  { entryType: "SPORTS", label: "Sports", code: "SPO" },
   { entryType: "LIBRARY", label: "Library", code: "LIB" },
   { entryType: "SEMINAR", label: "Seminar", code: "SEM" },
   { entryType: "COUNSELING", label: "Counseling", code: "COUN" },

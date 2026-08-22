@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils"
 import type { EntryType } from "@/lib/types"
-import { activityLabel, shortFacultyName } from "./entryStyles"
+import { activityLabel, shortFacultyName, hasNoRoomOrFaculty } from "./entryStyles"
 
 /**
  * One filled cell of a timetable — the same one everywhere.
@@ -45,7 +45,12 @@ export function ClassCell({
   className?: string
 }) {
   const label = primary ?? activityLabel(entryType)
-  const who = abbreviateFaculty ? shortFacultyName(faculty) : (faculty ?? null)
+  // SPORTS and LIBRARY never show a faculty or room line — not even a stray
+  // one left over on an entry placed before this rule existed. Every other
+  // type (including SEMINAR/COUNSELING) still shows whatever it's given.
+  const bare = hasNoRoomOrFaculty(entryType)
+  const who = bare ? null : abbreviateFaculty ? shortFacultyName(faculty) : (faculty ?? null)
+  const shownRoom = bare ? null : room
 
   return (
     <div
@@ -78,9 +83,9 @@ export function ClassCell({
             <span className="text-[9px] opacity-90 break-words w-full">{who}</span>
           )}
 
-          {room && (
+          {shownRoom && (
             <span className="text-[9px] font-medium opacity-70 break-words w-full">
-              {room}
+              {shownRoom}
             </span>
           )}
         </>

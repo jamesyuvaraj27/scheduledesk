@@ -6,6 +6,7 @@ import {
   computeAvailability,
   overlaps,
   facultyDailyLoad,
+  requiresNoRoom,
   type SchedulingContext,
   type PlacedEntry,
   type Candidate,
@@ -145,6 +146,145 @@ describe("valid placements", () => {
       roomId: null,
     })
     assert.deepEqual(validatePlacement(c, context()), [])
+  })
+
+  test("SPORTS needs no subject, faculty or room either", () => {
+    const c = theory({
+      entryType: "SPORTS",
+      subjectId: null,
+      facultyId: null,
+      roomId: null,
+    })
+    assert.deepEqual(validatePlacement(c, context()), [])
+  })
+})
+
+describe("SPORTS and LIBRARY carry no room or faculty", () => {
+  test("requiresNoRoom is true only for SPORTS and LIBRARY", () => {
+    assert.equal(requiresNoRoom("SPORTS"), true)
+    assert.equal(requiresNoRoom("LIBRARY"), true)
+    assert.equal(requiresNoRoom("SEMINAR"), false)
+    assert.equal(requiresNoRoom("COUNSELING"), false)
+    assert.equal(requiresNoRoom("THEORY"), false)
+    assert.equal(requiresNoRoom("LAB"), false)
+  })
+
+  test("four sections can all have SPORTS in the same slot, no room, no faculty", () => {
+    const sportsEntry = (sectionId: string, id: string) =>
+      placed({
+        id,
+        sectionId,
+        entryType: "SPORTS",
+        subjectId: null,
+        facultyId: null,
+        roomId: null,
+        startPeriod: 5,
+      })
+
+    const ctx = context({
+      entries: [
+        sportsEntry(SEC_B, "sports-b"),
+        sportsEntry("sec-csd-a", "sports-csd-a"),
+        sportsEntry("sec-cai-a", "sports-cai-a"),
+      ],
+    })
+
+    const candidate: Candidate = {
+      sectionId: SEC_A,
+      dayOfWeek: "MON",
+      startPeriod: 5,
+      periodSpan: 1,
+      entryType: "SPORTS",
+      subjectId: null,
+      facultyId: null,
+      roomId: null,
+    }
+
+    assert.deepEqual(validatePlacement(candidate, ctx), [])
+  })
+
+  test("four sections can all have LIBRARY in the same slot too", () => {
+    const libraryEntry = (sectionId: string, id: string) =>
+      placed({
+        id,
+        sectionId,
+        entryType: "LIBRARY",
+        subjectId: null,
+        facultyId: null,
+        roomId: null,
+        startPeriod: 6,
+      })
+
+    const ctx = context({
+      entries: [libraryEntry(SEC_B, "lib-b"), libraryEntry("sec-csd-a", "lib-csd-a")],
+    })
+
+    const candidate: Candidate = {
+      sectionId: SEC_A,
+      dayOfWeek: "MON",
+      startPeriod: 6,
+      periodSpan: 1,
+      entryType: "LIBRARY",
+      subjectId: null,
+      facultyId: null,
+      roomId: null,
+    }
+
+    assert.deepEqual(validatePlacement(candidate, ctx), [])
+  })
+
+  test("SPORTS in two sections at once does not raise ROOM_CLASH or FACULTY_CLASH", () => {
+    const ctx = context({
+      entries: [
+        placed({
+          id: "other-sports",
+          sectionId: SEC_B,
+          entryType: "SPORTS",
+          subjectId: null,
+          facultyId: null,
+          roomId: null,
+          startPeriod: 5,
+        }),
+      ],
+    })
+    const candidate: Candidate = {
+      sectionId: SEC_A,
+      dayOfWeek: "MON",
+      startPeriod: 5,
+      periodSpan: 1,
+      entryType: "SPORTS",
+      subjectId: null,
+      facultyId: null,
+      roomId: null,
+    }
+    const result = validatePlacement(candidate, ctx)
+    assert.ok(!codes(result).includes("ROOM_CLASH"))
+    assert.ok(!codes(result).includes("FACULTY_CLASH"))
+    assert.ok(!codes(result).includes("SECTION_CLASH"), "different section, so no section clash")
+  })
+
+  test("SPORTS still clashes for the SAME section at the same time", () => {
+    const ctx = context({
+      entries: [
+        placed({
+          id: "already-busy",
+          sectionId: SEC_A,
+          entryType: "THEORY",
+          startPeriod: 5,
+        }),
+      ],
+    })
+    const candidate: Candidate = {
+      sectionId: SEC_A,
+      dayOfWeek: "MON",
+      startPeriod: 5,
+      periodSpan: 1,
+      entryType: "SPORTS",
+      subjectId: null,
+      facultyId: null,
+      roomId: null,
+    }
+    assert.ok(codes(validatePlacement(candidate, ctx)).includes("SECTION_CLASH"))
   })
 })
 
@@ -416,6 +556,7 @@ describe("weekly hour validation", () => {
     placed({ id: "lib", dayOfWeek: "WED", startPeriod: 1, entryType: "LIBRARY", subjectId: null, facultyId: null, roomId: null }),
     placed({ id: "sem", dayOfWeek: "WED", startPeriod: 2, entryType: "SEMINAR", subjectId: null, facultyId: null, roomId: null }),
     placed({ id: "cou", dayOfWeek: "WED", startPeriod: 3, entryType: "COUNSELING", subjectId: null, facultyId: null, roomId: null }),
+    placed({ id: "spo", dayOfWeek: "WED", startPeriod: 4, entryType: "SPORTS", subjectId: null, facultyId: null, roomId: null }),
   ]
 
   test("a complete week validates", () => {

@@ -9,7 +9,7 @@ import { Select } from "@/components/ui/select"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
 import { ClassCell } from "@/components/timetable/ClassCell"
-import { activityLabel, SESSION_LABEL } from "@/components/timetable/entryStyles"
+import { activityLabel, SESSION_LABEL, hasNoRoomOrFaculty } from "@/components/timetable/entryStyles"
 import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import type {
@@ -343,10 +343,15 @@ function SingleDay({
                         {entry.subject && (
                           <div className="text-xs opacity-80">{entry.subject.name}</div>
                         )}
-                        <div className="text-xs opacity-80 mt-0.5">
-                          {entry.faculty?.name ?? "Faculty not assigned"}
-                          {entry.room ? ` · ${entry.room.name}` : ""}
-                        </div>
+                        {/* SPORTS and LIBRARY carry no faculty or room, so
+                            there is nothing useful to print on this line —
+                            the activity name above is the whole story. */}
+                        {!hasNoRoomOrFaculty(entry.entryType) && (
+                          <div className="text-xs opacity-80 mt-0.5">
+                            {entry.faculty?.name ?? "Faculty not assigned"}
+                            {entry.room ? ` · ${entry.room.name}` : ""}
+                          </div>
+                        )}
                       </>
                     )}
                   </td>

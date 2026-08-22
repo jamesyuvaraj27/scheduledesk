@@ -186,7 +186,7 @@ export interface FacultyWorkloadResponse {
 
 /* --------------------------- Phase 3/4/5 types --------------------------- */
 
-export type EntryType = "THEORY" | "LAB" | "LIBRARY" | "SEMINAR" | "COUNSELING"
+export type EntryType = "THEORY" | "LAB" | "LIBRARY" | "SEMINAR" | "COUNSELING" | "SPORTS"
 
 export interface Conflict {
   code: string

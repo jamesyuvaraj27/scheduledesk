@@ -22,6 +22,7 @@ export const SESSION_LABEL: Record<SessionKind, string> = {
   SEMINAR: "Seminar",
   COUNSELING: "Counselling",
   LIBRARY: "Library",
+  SPORTS: "Sports",
   BREAK: "Break",
   LUNCH: "Lunch",
 }
@@ -30,12 +31,25 @@ export const SESSION_LABEL: Record<SessionKind, string> = {
 export const SESSION_ORDER: SessionKind[] = [
   "THEORY",
   "LAB",
+  "SPORTS",
   "LIBRARY",
   "SEMINAR",
   "COUNSELING",
   "BREAK",
   "LUNCH",
 ]
+
+/**
+ * SPORTS and LIBRARY carry no room or faculty at all — not even the
+ * section's home room, and no fake assignment is ever made for them.
+ * SEMINAR and COUNSELING are NOT in this set: they keep showing the
+ * section's home room and their usual "no faculty" state, unchanged.
+ */
+export const NO_ROOM_FACULTY_TYPES: EntryType[] = ["SPORTS", "LIBRARY"]
+
+export function hasNoRoomOrFaculty(type: EntryType): boolean {
+  return NO_ROOM_FACULTY_TYPES.includes(type)
+}
 
 /**
  * What goes on the first line of a cell when there's no subject attached.

@@ -17,7 +17,13 @@ import { occupiedPeriods } from "./periods.js"
 
 export type Day = "MON" | "TUE" | "WED" | "THU" | "FRI" | "SAT" | "SUN"
 
-export type EntryType = "THEORY" | "LAB" | "LIBRARY" | "SEMINAR" | "COUNSELING"
+export type EntryType =
+  | "THEORY"
+  | "LAB"
+  | "LIBRARY"
+  | "SEMINAR"
+  | "COUNSELING"
+  | "SPORTS"
 
 export type RoomType = "CLASSROOM" | "LAB" | "LIBRARY" | "SEMINAR_HALL"
 
@@ -115,10 +121,25 @@ export function overlaps(
 }
 
 /** Entry types that occupy a teaching slot but have no subject of their own. */
-export const ACTIVITY_TYPES: EntryType[] = ["LIBRARY", "SEMINAR", "COUNSELING"]
+export const ACTIVITY_TYPES: EntryType[] = ["LIBRARY", "SEMINAR", "COUNSELING", "SPORTS"]
 
 export function isActivity(type: EntryType): boolean {
   return ACTIVITY_TYPES.includes(type)
+}
+
+/**
+ * Activities that must never carry a room — not even the section's home
+ * room. SPORTS has no fixed venue in this college's data (there's no "the
+ * sports room"), and LIBRARY is explicitly the same: multiple sections can
+ * be in the library, or on the field, at the same time, so defaulting either
+ * to a room would fabricate a clash that doesn't exist and a room
+ * assignment nobody made. SEMINAR and COUNSELING are deliberately NOT in
+ * this set — they keep defaulting to the section's home room, unchanged.
+ */
+export const NO_ROOM_TYPES: EntryType[] = ["SPORTS", "LIBRARY"]
+
+export function requiresNoRoom(type: EntryType): boolean {
+  return NO_ROOM_TYPES.includes(type)
 }
 
 /** Every activity happens once a week per section. */

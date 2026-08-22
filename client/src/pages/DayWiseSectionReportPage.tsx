@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import { buildDayCells, displayTime, DAY_LABEL, type DayCell } from "@/components/timetable/gridLayout"
+import { hasNoRoomOrFaculty } from "@/components/timetable/entryStyles"
 import type { Day, GridSlot, PublicDayWiseReport, PublicTimetableEntry } from "@/lib/types"
 
 /**
@@ -260,26 +261,34 @@ function ReportCell({ cell }: { cell: DayCell<PublicTimetableEntry> }) {
   }
 
   const entry = cell.entry
+  // SPORTS and LIBRARY never carry a room or faculty — showing "Not
+  // Assigned" for either would read as a gap in the timetable when there is
+  // none; the activity name alone is the whole story for these two.
+  const bare = hasNoRoomOrFaculty(entry.entryType)
   return (
     <td colSpan={cell.colSpan} className="border px-1.5 py-1.5 text-center align-top">
       <div className="text-xs font-semibold leading-tight">{activityLabel(entry)}</div>
-      <div
-        className={cn(
-          "text-[11px] leading-tight mt-0.5",
-          !entry.faculty && "text-muted-foreground italic"
-        )}
-      >
-        {/* Name only — the public API sends no faculty number. */}
-        {entry.faculty ? entry.faculty.name : "Faculty: Not Assigned"}
-      </div>
-      <div
-        className={cn(
-          "text-[11px] leading-tight",
-          !entry.room && "text-muted-foreground italic"
-        )}
-      >
-        {entry.room?.name ?? "Room: Not Assigned"}
-      </div>
+      {!bare && (
+        <div
+          className={cn(
+            "text-[11px] leading-tight mt-0.5",
+            !entry.faculty && "text-muted-foreground italic"
+          )}
+        >
+          {/* Name only — the public API sends no faculty number. */}
+          {entry.faculty ? entry.faculty.name : "Faculty: Not Assigned"}
+        </div>
+      )}
+      {!bare && (
+        <div
+          className={cn(
+            "text-[11px] leading-tight",
+            !entry.room && "text-muted-foreground italic"
+          )}
+        >
+          {entry.room?.name ?? "Room: Not Assigned"}
+        </div>
+      )}
     </td>
   )
 }

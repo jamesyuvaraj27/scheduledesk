@@ -14,6 +14,7 @@ import {
   validatePlacement,
   validateSection,
   isActivity,
+  requiresNoRoom,
   type Candidate,
   type Day,
   type EntryType,
@@ -25,7 +26,7 @@ import {
 export const timetableRouter = Router()
 
 const DAYS = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] as const
-const ENTRY_TYPES = ["THEORY", "LAB", "LIBRARY", "SEMINAR", "COUNSELING"] as const
+const ENTRY_TYPES = ["THEORY", "LAB", "LIBRARY", "SEMINAR", "COUNSELING", "SPORTS"] as const
 
 /**
  * Assemble everything the conflict engine needs. Note that `entries` covers
@@ -123,13 +124,18 @@ async function loadContext(sectionId: string, versionSpec?: VersionSpec) {
 /**
  * The room an entry should use. Rooms are fixed per section — only labs
  * move — so everything except a lab defaults to the section's home room.
+ *
+ * SPORTS and LIBRARY are the exception: they never get that default. A lab
+ * needs an explicit room because it moves between real laboratories; SPORTS
+ * and LIBRARY need no room at all, so an explicit choice (if the admin ever
+ * makes one, e.g. via room allocation) is honoured, but nothing is assumed.
  */
 function resolveRoomId(
   entryType: EntryType,
   explicitRoomId: string | null | undefined,
   homeRoomId: string | null
 ): string | null {
-  if (entryType === "LAB") return explicitRoomId ?? null
+  if (entryType === "LAB" || requiresNoRoom(entryType)) return explicitRoomId ?? null
   return explicitRoomId ?? homeRoomId
 }
 
