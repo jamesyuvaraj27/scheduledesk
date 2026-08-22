@@ -259,6 +259,12 @@ export interface SlotAvailability {
   startPeriod: number
   available: boolean
   reasons: Conflict[]
+  /**
+   * Blocked as an ordinary placement, but legal as a combined class taught
+   * alongside this existing entry — one teacher, one subject, two sections,
+   * one room. Null whenever combining wouldn't be valid either.
+   */
+  combinableWithEntryId?: string | null
 }
 
 export interface AvailabilityResponse {
@@ -418,6 +424,15 @@ export interface AllocatableOption {
   alreadyHere: boolean
   available: boolean
   reasons: Conflict[]
+  /**
+   * Blocked as an ordinary move because the room is already in use, but
+   * legal if the office says the two are meant to run side by side — the
+   * Shared Room case. False when sharing wouldn't fix it either (a faculty
+   * member can't take two different subjects at once, room or no room).
+   */
+  shareable?: boolean
+  /** The class already in the room, to be shared with. */
+  shareWithEntryId?: string | null
 }
 
 export interface AllocatableResponse {

@@ -58,6 +58,16 @@ export interface PlacedEntry {
   subjectId: string | null
   facultyId: string | null
   roomId: string | null
+  /**
+   * Deliberately-shared slot tag — see `sharedSlotId` in schema.prisma.
+   *
+   * Required rather than optional on purpose: every caller that loads
+   * entries out of the database MUST pass it through, or the engine would
+   * read a genuinely-shared slot as an accidental clash and report a
+   * conflict on a timetable that is already saved and correct. Making it
+   * required means the compiler finds any site that forgets.
+   */
+  sharedSlotId: string | null
 }
 
 /** A placement the user is attempting. */
@@ -72,6 +82,8 @@ export interface Candidate {
   subjectId?: string | null
   facultyId?: string | null
   roomId?: string | null
+  /** Set only when the user is deliberately joining an existing slot. */
+  sharedSlotId?: string | null
 }
 
 export interface TimeConfigLike {
@@ -144,6 +156,66 @@ export function requiresNoRoom(type: EntryType): boolean {
 
 /** Every activity happens once a week per section. */
 export const ACTIVITY_WEEKLY_HOURS = 1
+
+/* -------------------------------------------------------------------------- */
+/*                          Deliberately-shared slots                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Are these two placements known to share this slot on purpose?
+ *
+ * Only true when BOTH carry the same non-null tag. Two untagged entries that
+ * merely happen to collide are still a clash — which is the whole point:
+ * accidental double-booking has to keep failing exactly as it does today.
+ */
+function sharesSlot(
+  a: { sharedSlotId?: string | null },
+  b: { sharedSlotId?: string | null }
+): boolean {
+  return Boolean(a.sharedSlotId) && a.sharedSlotId === b.sharedSlotId
+}
+
+/**
+ * May these two share a ROOM at the same time?
+ *
+ * Yes, whenever the slot is shared on purpose. That covers both intended
+ * arrangements — a combined section (one class, two sections listening) and
+ * a shared room (two independent classes in one hall) — because from the
+ * room's point of view they are the same fact: the office has said these
+ * two belong in here together.
+ */
+function roomShareAllowed(
+  a: { sharedSlotId?: string | null },
+  b: { sharedSlotId?: string | null }
+): boolean {
+  return sharesSlot(a, b)
+}
+
+/**
+ * May the SAME faculty member appear in both at the same time?
+ *
+ * Only when it is genuinely one class being taught once: same shared slot
+ * AND the same subject. That extra `subjectId` test is the load-bearing part
+ * of this whole feature.
+ *
+ * Without it, tagging a slot would excuse every faculty clash inside it, so
+ *
+ *     AFF1 Mon P1: Ravi -> DBMS -> CSM-A
+ *     AFF1 Mon P1: Ravi -> OS   -> CSM-B
+ *
+ * would save silently — one person timetabled to teach two different
+ * subjects simultaneously. That is not a combined class and not a legal
+ * shared room; it is a straightforward double-booking, and it stays blocked.
+ */
+function facultyShareAllowed(
+  a: { sharedSlotId?: string | null; subjectId?: string | null },
+  b: { sharedSlotId?: string | null; subjectId?: string | null }
+): boolean {
+  if (!sharesSlot(a, b)) return false
+  // A shared slot with no subject on either side (two sections at the same
+  // Library hour, say) is fine; two different subjects never is.
+  return (a.subjectId ?? null) === (b.subjectId ?? null)
+}
 
 /**
  * The single source of truth for whether a placement is legal.
@@ -275,6 +347,8 @@ export function validatePlacement(
       continue
     }
 
+    // A section can never be in two places at once, and no amount of
+    // "we meant it" changes that — this one is never waived.
     if (entry.sectionId === candidate.sectionId) {
       conflicts.push({
         code: "SECTION_CLASH",
@@ -287,7 +361,8 @@ export function validatePlacement(
       candidate.facultyId &&
       entry.facultyId &&
       entry.facultyId === candidate.facultyId &&
-      entry.sectionId !== candidate.sectionId
+      entry.sectionId !== candidate.sectionId &&
+      !facultyShareAllowed(candidate, entry)
     ) {
       conflicts.push({
         code: "FACULTY_CLASH",
@@ -300,7 +375,8 @@ export function validatePlacement(
       candidate.roomId &&
       entry.roomId &&
       entry.roomId === candidate.roomId &&
-      entry.sectionId !== candidate.sectionId
+      entry.sectionId !== candidate.sectionId &&
+      !roomShareAllowed(candidate, entry)
     ) {
       const room = ctx.rooms.get(candidate.roomId)
       conflicts.push({

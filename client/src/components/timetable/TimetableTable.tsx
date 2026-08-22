@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import type { Day, GridSlot } from "@/lib/types"
-import { buildDayCells, displayTime, type DayCell } from "./gridLayout"
+import { buildDayCells, buildDayLanes, displayTime, type DayCell } from "./gridLayout"
 
 interface HasPlacement {
   dayOfWeek: Day
@@ -21,6 +21,7 @@ export function TimetableTable<T extends HasPlacement>({
   renderEntry,
   renderEmpty,
   className,
+  lanes = false,
 }: {
   slots: GridSlot[]
   workingDays: Day[]
@@ -28,8 +29,28 @@ export function TimetableTable<T extends HasPlacement>({
   renderEntry: (entry: T, isFirstRun: boolean) => React.ReactNode
   renderEmpty?: (day: Day, period: number) => React.ReactNode
   className?: string
+  /**
+   * Draw extra rows for a day where two classes genuinely occupy one hour —
+   * a combined section or a shared room. Only the faculty and room grids
+   * need this; a section is never in two places at once, so its grid stays
+   * one row per day and renders exactly as it always has.
+   */
+  lanes?: boolean
 }) {
   const periodSlots = slots.filter((s) => s.kind === "PERIOD")
+
+  const days = workingDays.map((day) => ({
+    day,
+    rows: lanes
+      ? buildDayLanes(day, slots, entries)
+      : [buildDayCells(day, slots, entries)],
+  }))
+
+  // Break and lunch are one cell merged down the WHOLE table, so their
+  // rowSpan counts every rendered row, not every day — those differ as soon
+  // as any day needs a second lane.
+  const totalRows = days.reduce((n, d) => n + d.rows.length, 0)
+  let renderedRows = 0
 
   return (
     // Scrolls inside its own box on a narrow screen so the page itself never
@@ -87,27 +108,43 @@ export function TimetableTable<T extends HasPlacement>({
         </thead>
 
         <tbody>
-          {workingDays.map((day, rowIndex) => {
-            const cells = buildDayCells(day, slots, entries)
-            return (
-              <tr key={day}>
-                <th className="border px-1 py-1 text-xs font-semibold bg-muted/40">
-                  {day}
-                </th>
-                {cells.map((cell, i) => (
-                  <Cell
-                    key={i}
-                    cell={cell}
-                    day={day}
-                    isFirstRow={rowIndex === 0}
-                    rowCount={workingDays.length}
-                    renderEntry={renderEntry}
-                    renderEmpty={renderEmpty}
-                  />
-                ))}
-              </tr>
-            )
-          })}
+          {days.map(({ day, rows }) =>
+            rows.map((cells, laneIndex) => {
+              const isFirstRow = renderedRows === 0
+              renderedRows++
+              return (
+                <tr key={`${day}-${laneIndex}`}>
+                  {/* The day is named once and spans its lanes, so a day
+                      with a shared hour still reads as one day. */}
+                  {laneIndex === 0 && (
+                    <th
+                      rowSpan={rows.length}
+                      className="border px-1 py-1 text-xs font-semibold bg-muted/40 align-middle"
+                    >
+                      {day}
+                    </th>
+                  )}
+                  {cells.map((cell, i) => (
+                    <Cell
+                      key={i}
+                      cell={cell}
+                      day={day}
+                      isFirstRow={isFirstRow}
+                      rowCount={totalRows}
+                      renderEntry={renderEntry}
+                      // Only the first lane speaks for whether an hour is
+                      // free — the extra lanes hold just the second
+                      // occupant, so their gaps are "nothing further here",
+                      // not "this hour is available". Drawing the room
+                      // page's allocate button in them would offer a slot
+                      // that is already taken.
+                      renderEmpty={laneIndex === 0 ? renderEmpty : undefined}
+                    />
+                  ))}
+                </tr>
+              )
+            })
+          )}
         </tbody>
       </table>
 

@@ -113,6 +113,63 @@ export function buildDayCells<T extends HasPlacement>(
   return cells
 }
 
+/**
+ * The same day, but split into as many rows as it takes to show everything.
+ *
+ * A section can only ever be in one place at a time, so its grid is always
+ * one row per day and `buildDayCells` above is the whole story. A faculty
+ * member's grid and a room's grid are different: both are queries across
+ * every section, and the college deliberately puts two things in one hour —
+ *
+ *   a combined section, where one teacher takes one subject to CSM-A and
+ *     CSM-B together, so BOTH sections' entries name that teacher and that
+ *     room at the same hour;
+ *   a shared room, where two independent classes run in one hall.
+ *
+ * Feeding those to `buildDayCells` would lose one of them silently: it maps
+ * each period to a single entry, so the second simply overwrites the first
+ * and vanishes from the sheet. This lays the overlapping entries out as
+ * extra rows instead — first-fit, so an hour with nothing to share stays on
+ * the first row and the common case looks exactly as it always has.
+ *
+ * Returns one cell-row per lane, always at least one (an empty day still
+ * needs its row drawn).
+ */
+export function buildDayLanes<T extends HasPlacement>(
+  day: Day,
+  slots: GridSlot[],
+  entries: T[]
+): DayCell<T>[][] {
+  const forDay = entries
+    .filter((e) => e.dayOfWeek === day)
+    // Earliest first, so lane assignment is stable and the "extra" row is
+    // the later-added class rather than whichever the API happened to
+    // return first. Sort is stable, so equal starts keep their input order.
+    .slice()
+    .sort((a, b) => a.startPeriod - b.startPeriod)
+
+  const covers = (e: T, period: number) =>
+    period >= e.startPeriod && period < e.startPeriod + e.periodSpan
+
+  const clashes = (lane: T[], entry: T) =>
+    lane.some((other) => {
+      for (let p = entry.startPeriod; p < entry.startPeriod + entry.periodSpan; p++) {
+        if (covers(other, p)) return true
+      }
+      return false
+    })
+
+  const lanes: T[][] = []
+  for (const entry of forDay) {
+    const lane = lanes.find((l) => !clashes(l, entry))
+    if (lane) lane.push(entry)
+    else lanes.push([entry])
+  }
+
+  if (lanes.length === 0) return [buildDayCells(day, slots, [])]
+  return lanes.map((lane) => buildDayCells(day, slots, lane))
+}
+
 /** Day codes to the labels printed on the sheet. */
 export const DAY_LABEL: Record<Day, string> = {
   MON: "MON",

@@ -82,6 +82,7 @@ async function loadTermData(versionSpec?: VersionSpec) {
     subjectId: e.subjectId,
     facultyId: e.facultyId,
     roomId: e.roomId,
+    sharedSlotId: e.sharedSlotId,
   }))
 
   const roomMap = new Map(

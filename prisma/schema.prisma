@@ -300,6 +300,26 @@ model TimetableEntry {
   roomId    String?
   room      Room?    @relation(fields: [roomId], references: [id])
 
+  // Deliberately-shared slot. Entries carrying the SAME non-null value are
+  // known to occupy one day/period together on purpose, which is what tells
+  // the conflict engine to allow what would otherwise be a clash:
+  //
+  //   Combined section — one teacher taking one subject to two sections in
+  //     one room (CSM-A and CSM-B both get DBMS/Ravi/AFF1 at Mon P1).
+  //   Shared room      — two independent classes in one room at one time
+  //     (CSM-A DBMS/Ravi and CSM-B OS/Priya, both in AFF1 at Mon P1).
+  //
+  // Both are the same fact at this level ("these entries share a slot on
+  // purpose"), so one nullable tag covers both rather than two mechanisms.
+  // Which of the two it reads as is derived from the entries themselves:
+  // same faculty + same subject is a combined section, anything else is a
+  // shared room. Nothing here duplicates a Faculty, Room or Section — this
+  // is a tag on the timetable rows that already exist, one per section.
+  //
+  // NULL (the default, and what every existing row has) means "not shared",
+  // so every clash rule behaves exactly as it did before.
+  sharedSlotId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -307,4 +327,5 @@ model TimetableEntry {
   @@index([versionId, facultyId, dayOfWeek])
   @@index([versionId, roomId, dayOfWeek])
   @@index([termId, sectionId, dayOfWeek])
+  @@index([sharedSlotId])
 }

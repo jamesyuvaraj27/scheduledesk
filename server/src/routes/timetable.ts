@@ -22,6 +22,7 @@ import {
   type RoomType,
   type SchedulingContext,
 } from "../lib/scheduling.js"
+import { joinSharedSlot, pruneSharedSlot } from "../lib/sharedSlots.js"
 
 export const timetableRouter = Router()
 
@@ -93,6 +94,7 @@ async function loadContext(sectionId: string, versionSpec?: VersionSpec) {
         subjectId: e.subjectId,
         facultyId: e.facultyId,
         roomId: e.roomId,
+        sharedSlotId: e.sharedSlotId,
       })
     ),
     curriculum: sectionSubjects.map((ss) => ({
@@ -228,11 +230,71 @@ timetableRouter.get(
       roomId: resolveRoomId(query.entryType, query.roomId, section.homeRoomId),
     }
 
+    const slots = computeAvailability(base, ctx)
+
+    // The grid greys out an hour where this section's teacher is already
+    // busy, which is exactly the hour a combined class has to go in — so
+    // without this, a combined class would be unreachable: there is no free
+    // cell to click.
+    //
+    // For each blocked hour, ask the same engine a second question: would
+    // this be legal if the office declared the two a deliberate pair? Only
+    // when the answer is yes does the client offer to combine. Everything
+    // that sharing would NOT fix — most importantly one teacher against two
+    // different subjects — comes back blocked, so the offer never appears
+    // where it would be wrong.
+    const byId = new Map(ctx.entries.map((e) => [e.id, e]))
+    const withCombine = slots.map((slot) => {
+      if (slot.available) return { ...slot, combinableWithEntryId: null }
+
+      const blockers = slot.reasons
+      const targetIds = new Set(
+        blockers.map((r) => r.conflictingEntryId).filter(Boolean) as string[]
+      )
+      // Only a straight two-way overlap is offerable. Anything else (a
+      // section clash, a bad span, three-way congestion) is a real problem.
+      const onlyClashes = blockers.every(
+        (r) =>
+          (r.code === "FACULTY_CLASH" || r.code === "ROOM_CLASH") &&
+          r.conflictingEntryId
+      )
+      if (!onlyClashes || targetIds.size !== 1) {
+        return { ...slot, combinableWithEntryId: null }
+      }
+
+      const targetId = [...targetIds][0]
+      const target = byId.get(targetId)
+      if (!target) return { ...slot, combinableWithEntryId: null }
+
+      const preview = `preview:${targetId}`
+      const asShared = validatePlacement(
+        {
+          ...base,
+          dayOfWeek: slot.dayOfWeek,
+          startPeriod: slot.startPeriod,
+          // A combined class sits in the other class's room, by definition.
+          roomId: target.roomId,
+          sharedSlotId: preview,
+        },
+        {
+          ...ctx,
+          entries: ctx.entries.map((e) =>
+            e.id === targetId ? { ...e, sharedSlotId: preview } : e
+          ),
+        }
+      )
+
+      return {
+        ...slot,
+        combinableWithEntryId: asShared.length === 0 ? targetId : null,
+      }
+    })
+
     res.json({
       periodSpan: base.periodSpan,
       facultyId,
       roomId: base.roomId,
-      slots: computeAvailability(base, ctx),
+      slots: withCombine,
     })
   })
 )
@@ -247,6 +309,19 @@ const entrySchema = z.object({
   roomId: z.string().nullish(),
   /** Consecutive periods covered. Only meaningful for labs; others are 1. */
   periodSpan: z.number().int().min(1).max(12).optional(),
+  /**
+   * Deliberately place this alongside an existing class in the same room and
+   * hour — the Combined Section case, where one teacher takes one subject to
+   * both sections at once.
+   *
+   * The room is inherited from that class rather than taken from the request,
+   * because a combined class is by definition in one room; letting the caller
+   * name a different one would describe something impossible.
+   *
+   * Omitting this leaves every clash rule exactly as it was, so nothing can
+   * become a combined class by accident.
+   */
+  shareWithEntryId: z.string().nullish(),
 })
 
 timetableRouter.post(
@@ -261,8 +336,39 @@ timetableRouter.post(
     await assertEditable(version)
 
     const candidate = buildCandidate(sectionId, body, section.homeRoomId, ctx)
-    const conflicts = validatePlacement(candidate, ctx)
+
+    // Combining adopts the other class's room, so resolve it before the
+    // conflict check rather than after — the room is part of what's checked.
+    if (body.shareWithEntryId) {
+      const target = await prisma.timetableEntry.findUnique({
+        where: { id: body.shareWithEntryId },
+      })
+      if (!target) throw notFound("The class to combine with")
+      candidate.roomId = target.roomId
+      candidate.sharedSlotId = await joinSharedSlot(body.shareWithEntryId, {
+        versionId: version.id,
+        dayOfWeek: candidate.dayOfWeek,
+        startPeriod: candidate.startPeriod,
+        periodSpan: candidate.periodSpan,
+        roomId: target.roomId,
+      })
+    }
+
+    // Re-read when a share was just established: joinSharedSlot may have
+    // tagged the target, and `ctx` was loaded before that write.
+    const checkCtx = body.shareWithEntryId
+      ? (await loadContext(sectionId, version.id)).ctx
+      : ctx
+
+    const conflicts = validatePlacement(candidate, checkCtx)
     if (conflicts.length) {
+      // Establishing the share tagged the class being joined, but the
+      // placement is being refused — so that tag now describes a pairing
+      // that does not exist. Take it back off rather than leaving a failed
+      // request's fingerprints on an entry the user never changed.
+      if (body.shareWithEntryId) {
+        await pruneSharedSlot(candidate.sharedSlotId ?? null)
+      }
       throw new AppError("That placement isn't allowed.", 409, conflicts)
     }
 
@@ -278,6 +384,7 @@ timetableRouter.post(
         subjectId: candidate.subjectId ?? null,
         facultyId: candidate.facultyId ?? null,
         roomId: candidate.roomId ?? null,
+        sharedSlotId: candidate.sharedSlotId ?? null,
       },
       include: { subject: true, faculty: true, room: true },
     })
@@ -315,6 +422,19 @@ timetableRouter.patch(
       ctx,
       entryId
     )
+
+    // Dragging a class to another hour takes it out of whatever it was
+    // sharing. Carrying the tag along would exempt it from the room and
+    // faculty checks at its new time, where nothing was ever agreed.
+    const stillInPlace =
+      existing.sharedSlotId !== null &&
+      candidate.dayOfWeek === existing.dayOfWeek &&
+      candidate.startPeriod === existing.startPeriod &&
+      candidate.periodSpan === existing.periodSpan &&
+      (candidate.roomId ?? null) === existing.roomId
+    candidate.sharedSlotId = stillInPlace ? existing.sharedSlotId : null
+    const abandonedSlot = stillInPlace ? null : existing.sharedSlotId
+
     const conflicts = validatePlacement(candidate, ctx)
     if (conflicts.length) {
       throw new AppError("That move isn't allowed.", 409, conflicts)
@@ -330,9 +450,12 @@ timetableRouter.patch(
         subjectId: candidate.subjectId ?? null,
         facultyId: candidate.facultyId ?? null,
         roomId: candidate.roomId ?? null,
+        sharedSlotId: candidate.sharedSlotId ?? null,
       },
       include: { subject: true, faculty: true, room: true },
     })
+
+    await pruneSharedSlot(abandonedSlot)
 
     res.json(updated)
   })
@@ -353,6 +476,8 @@ timetableRouter.delete(
     await assertEditable(await resolveVersion(term.id, existing.versionId))
 
     await prisma.timetableEntry.delete({ where: { id } })
+    // Removing one half of a pair leaves the other an ordinary class again.
+    await pruneSharedSlot(existing.sharedSlotId)
     res.status(204).end()
   })
 )

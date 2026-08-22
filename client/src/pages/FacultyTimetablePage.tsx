@@ -139,6 +139,9 @@ function FacultyGrid({ data }: { data: FacultyTimetable }) {
               slots={grid.slots}
               workingDays={grid.workingDays}
               entries={entries}
+              // A combined class reaches two sections at once, so this
+              // teacher's hour carries an entry for each. Both are shown.
+              lanes
               renderEntry={(entry, isFirstRun) => (
                 <ClassCell
                   entryType={entry.entryType}

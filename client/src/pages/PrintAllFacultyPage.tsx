@@ -142,6 +142,7 @@ function FacultySheet({
             slots={grid.slots}
             workingDays={grid.workingDays}
             entries={entries}
+            lanes
             renderEntry={(entry, isFirstRun) => (
               <ClassCell
                 entryType={entry.entryType}

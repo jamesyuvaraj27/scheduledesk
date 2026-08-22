@@ -88,6 +88,7 @@ const placed = (over: Partial<PlacedEntry> = {}): PlacedEntry => ({
   subjectId: ML,
   facultyId: SAI,
   roomId: ROOM_204,
+  sharedSlotId: null,
   ...over,
 })
 
@@ -358,6 +359,174 @@ describe("clash detection", () => {
   test("no clash on a different day", () => {
     const ctx = context({ entries: [placed({ id: "other", sectionId: SEC_B, dayOfWeek: "TUE" })] })
     assert.deepEqual(validatePlacement(theory({ dayOfWeek: "MON" }), ctx), [])
+  })
+})
+
+describe("combined sections and shared rooms", () => {
+  const PRIYA = "fac-priya"
+  const OS = "sub-os"
+  const SLOT = "slot-mon-p3"
+
+  /** Ravi teaching DBMS(ML) to AIML-A in room 204, Mon P3. */
+  const anchor = (over: Partial<PlacedEntry> = {}) =>
+    placed({
+      id: "anchor",
+      sectionId: SEC_A,
+      startPeriod: 3,
+      subjectId: ML,
+      facultyId: SAI,
+      roomId: ROOM_204,
+      ...over,
+    })
+
+  /** The other section trying to join that same hour and room. */
+  const joiner = (over: Partial<Candidate> = {}): Candidate => ({
+    sectionId: SEC_B,
+    dayOfWeek: "MON",
+    startPeriod: 3,
+    periodSpan: 1,
+    entryType: "THEORY",
+    subjectId: ML,
+    facultyId: SAI,
+    roomId: ROOM_204,
+    ...over,
+  })
+
+  // The context is always the JOINING section's, so its curriculum and its
+  // assignments are what matter. `mlTakenBy` is who teaches ML *to that
+  // section* — the same subject can be a different person per section,
+  // which is exactly the shared-room case below.
+  const twoSectionCtx = (
+    entries: PlacedEntry[],
+    mlTakenBy: string = SAI
+  ): SchedulingContext =>
+    context({
+      entries,
+      curriculum: [
+        { subjectId: ML, subjectCode: "ML", weeklyTheoryHrs: 4, weeklyLabHrs: 0 },
+        { subjectId: OS, subjectCode: "OS", weeklyTheoryHrs: 4, weeklyLabHrs: 0 },
+        { subjectId: DBMS_LAB, subjectCode: "DBMSL", weeklyTheoryHrs: 0, weeklyLabHrs: 3 },
+      ],
+      assignments: new Map([
+        [ML, mlTakenBy],
+        [OS, PRIYA],
+        [DBMS_LAB, SAI],
+      ]),
+    })
+
+  test("untagged, this is still an ordinary double-booking", () => {
+    const result = validatePlacement(joiner(), twoSectionCtx([anchor()]))
+    assert.ok(
+      codes(result).includes("FACULTY_CLASH"),
+      "nothing may become a combined class by accident"
+    )
+    assert.ok(codes(result).includes("ROOM_CLASH"))
+  })
+
+  test("CASE 1 — same teacher, same subject, two sections, one room is allowed", () => {
+    const result = validatePlacement(
+      joiner({ sharedSlotId: SLOT }),
+      twoSectionCtx([anchor({ sharedSlotId: SLOT })])
+    )
+    assert.deepEqual(result, [])
+  })
+
+  test("CASE 1 invalid — same teacher, DIFFERENT subjects stays a faculty clash", () => {
+    // Ravi cannot take DBMS to one section and OS to another at one time,
+    // and saying "combined" does not make him able to.
+    const result = validatePlacement(
+      joiner({ sharedSlotId: SLOT, subjectId: OS }),
+      twoSectionCtx([anchor({ sharedSlotId: SLOT })])
+    )
+    assert.ok(
+      codes(result).includes("FACULTY_CLASH"),
+      "a tag must never excuse one person teaching two subjects at once"
+    )
+  })
+
+  test("CASE 2 — shared room, different teachers, different subjects is allowed", () => {
+    const result = validatePlacement(
+      joiner({ sharedSlotId: SLOT, subjectId: OS, facultyId: PRIYA }),
+      twoSectionCtx([anchor({ sharedSlotId: SLOT })])
+    )
+    assert.deepEqual(result, [])
+  })
+
+  test("CASE 2 — shared room, different teachers, SAME subject is allowed", () => {
+    // Two sections both doing ML in one hall, each with their own teacher.
+    const result = validatePlacement(
+      joiner({ sharedSlotId: SLOT, facultyId: PRIYA }),
+      twoSectionCtx([anchor({ sharedSlotId: SLOT })], PRIYA)
+    )
+    assert.deepEqual(result, [])
+  })
+
+  test("a tag never excuses a section being in two places at once", () => {
+    const result = validatePlacement(
+      joiner({ sectionId: SEC_A, sharedSlotId: SLOT }),
+      twoSectionCtx([anchor({ sharedSlotId: SLOT })])
+    )
+    assert.ok(codes(result).includes("SECTION_CLASH"))
+  })
+
+  test("different tags are two unrelated classes, so still a clash", () => {
+    const result = validatePlacement(
+      joiner({ sharedSlotId: "some-other-slot" }),
+      twoSectionCtx([anchor({ sharedSlotId: SLOT })])
+    )
+    assert.ok(codes(result).includes("FACULTY_CLASH"))
+    assert.ok(codes(result).includes("ROOM_CLASH"))
+  })
+
+  test("a tag on one side only is not a share", () => {
+    const result = validatePlacement(
+      joiner({ sharedSlotId: SLOT }),
+      twoSectionCtx([anchor({ sharedSlotId: null })])
+    )
+    assert.ok(codes(result).includes("FACULTY_CLASH"))
+    assert.ok(codes(result).includes("ROOM_CLASH"))
+  })
+
+  test("a shared slot does not leak into other hours", () => {
+    // Same tag, but the joiner is at P4 while the anchor is at P3. They
+    // don't overlap, so there was never anything to excuse — and nothing
+    // about the tag should make the engine think otherwise.
+    const result = validatePlacement(
+      joiner({ sharedSlotId: SLOT, startPeriod: 4 }),
+      twoSectionCtx([anchor({ sharedSlotId: SLOT })])
+    )
+    assert.deepEqual(result, [])
+  })
+
+  test("a shared activity hour with no subject on either side is allowed", () => {
+    const result = validatePlacement(
+      joiner({
+        sharedSlotId: SLOT,
+        entryType: "LIBRARY",
+        subjectId: null,
+        facultyId: null,
+      }),
+      twoSectionCtx([
+        anchor({
+          sharedSlotId: SLOT,
+          entryType: "LIBRARY",
+          subjectId: null,
+          facultyId: null,
+        }),
+      ])
+    )
+    assert.deepEqual(result, [])
+  })
+
+  test("a third section can join an existing pair", () => {
+    const result = validatePlacement(
+      joiner({ sectionId: "sec-csd-a", sharedSlotId: SLOT }),
+      twoSectionCtx([
+        anchor({ sharedSlotId: SLOT }),
+        anchor({ id: "second", sectionId: SEC_B, sharedSlotId: SLOT }),
+      ])
+    )
+    assert.deepEqual(result, [])
   })
 })
 

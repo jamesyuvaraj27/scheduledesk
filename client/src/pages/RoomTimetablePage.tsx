@@ -144,6 +144,10 @@ function RoomGrid({ roomId }: { roomId: string }) {
         slots={data.grid.slots}
         workingDays={data.grid.workingDays}
         entries={data.entries}
+        // A shared room holds two classes in one hour, and a combined class
+        // puts both sections' entries in here — either way this grid has to
+        // show more than one thing per slot.
+        lanes
         renderEntry={(entry, isFirstRun) => (
           <button
             type="button"
@@ -302,8 +306,17 @@ function AllocateDialog({
   })
 
   const allocate = useMutation({
-    mutationFn: (entryId: string) =>
-      api.patch(`/entries/${entryId}/room`, { roomId }),
+    mutationFn: ({
+      entryId,
+      shareWithEntryId,
+    }: {
+      entryId: string
+      shareWithEntryId?: string | null
+    }) =>
+      api.patch(`/entries/${entryId}/room`, {
+        roomId,
+        ...(shareWithEntryId ? { shareWithEntryId } : {}),
+      }),
     onSuccess: () => {
       onDone()
       onClose()
@@ -330,24 +343,34 @@ function AllocateDialog({
         ) : (
           <div className="max-h-72 overflow-y-auto space-y-1 pr-1">
             {data.options.map((o) => {
-              const blocked = !o.available && !o.alreadyHere
+              // Blocked only because the room is already in use, and the
+              // office is allowed to say that is intentional.
+              const shareable = Boolean(o.shareable && o.shareWithEntryId)
+              const blocked = !o.available && !o.alreadyHere && !shareable
+              const disabled = blocked || o.alreadyHere || allocate.isPending
+
               return (
                 <button
                   key={o.entryId}
                   type="button"
-                  disabled={blocked || o.alreadyHere || allocate.isPending}
-                  onClick={() => allocate.mutate(o.entryId)}
+                  disabled={disabled}
+                  onClick={() =>
+                    allocate.mutate({
+                      entryId: o.entryId,
+                      shareWithEntryId: shareable ? o.shareWithEntryId : null,
+                    })
+                  }
                   className={cn(
                     "w-full text-left rounded-md border px-3 py-2 text-sm transition-colors",
-                    blocked || o.alreadyHere
-                      ? "opacity-60 cursor-not-allowed"
-                      : "hover:bg-muted"
+                    disabled ? "opacity-60 cursor-not-allowed" : "hover:bg-muted",
+                    shareable && !disabled && "border-warning/40 bg-warning/5"
                   )}
                 >
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium">{o.label}</span>
                     {o.alreadyHere && <Badge variant="success">already here</Badge>}
                     {o.entryType === "LAB" && <Badge variant="warning">lab</Badge>}
+                    {shareable && <Badge variant="warning">share the room</Badge>}
                     {o.currentRoom && !o.alreadyHere && (
                       <span className="text-xs text-muted-foreground">
                         currently in {o.currentRoom.name}
@@ -357,6 +380,12 @@ function AllocateDialog({
                   {blocked && (
                     <p className="text-xs text-destructive mt-1">
                       {o.reasons.map((r) => r.message).join(" ")}
+                    </p>
+                  )}
+                  {shareable && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      This room is already in use then. Choosing this puts both
+                      classes in here together.
                     </p>
                   )}
                 </button>

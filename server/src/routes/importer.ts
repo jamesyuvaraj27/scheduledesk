@@ -316,6 +316,10 @@ importRouter.post(
         subjectId,
         facultyId,
         roomId,
+        // A spreadsheet says nothing about deliberately-shared slots, so an
+        // imported class is never one. Combining is an explicit act in the
+        // app, not something an import can imply.
+        sharedSlotId: null,
       }
 
       const conflicts = validatePlacement(placement, ctx)
@@ -388,6 +392,7 @@ async function buildContext(termId: string, versionId: string, sectionId: string
       subjectId: e.subjectId,
       facultyId: e.facultyId,
       roomId: e.roomId,
+      sharedSlotId: e.sharedSlotId,
     })),
     curriculum: sectionSubjects.map((ss) => ({
       subjectId: ss.subjectId,

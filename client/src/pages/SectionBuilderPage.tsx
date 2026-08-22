@@ -93,15 +93,19 @@ export function SectionBuilderPage() {
     qc.invalidateQueries({ queryKey: ["curriculum-status"] })
   }
 
+  interface PlaceBody {
+    dayOfWeek: Day
+    startPeriod: number
+    entryType: EntryType
+    subjectId?: string
+    roomId?: string
+    periodSpan?: number
+    /** Set only when combining with an existing class — see below. */
+    shareWithEntryId?: string
+  }
+
   const place = useMutation({
-    mutationFn: (body: {
-      dayOfWeek: Day
-      startPeriod: number
-      entryType: EntryType
-      subjectId?: string
-      roomId?: string
-      periodSpan?: number
-    }) => api.post(`/sections/${sectionId}/entries`, body),
+    mutationFn: (body: PlaceBody) => api.post(`/sections/${sectionId}/entries`, body),
     onSuccess: () => {
       setPlaceError(null)
       refresh()
@@ -127,11 +131,15 @@ export function SectionBuilderPage() {
   const label = `${section.branch?.code}-${section.name}`
 
   // Fast lookup of whether a given cell is placeable with the current tool.
-  const availabilityMap = new Map<string, { available: boolean; reason?: string }>()
+  const availabilityMap = new Map<
+    string,
+    { available: boolean; reason?: string; combinableWithEntryId?: string | null }
+  >()
   for (const slot of availability.data?.slots ?? []) {
     availabilityMap.set(`${slot.dayOfWeek}:${slot.startPeriod}`, {
       available: slot.available,
       reason: slot.reasons[0]?.message,
+      combinableWithEntryId: slot.combinableWithEntryId ?? null,
     })
   }
 
@@ -156,18 +164,37 @@ export function SectionBuilderPage() {
     return out
   })
 
+  const bodyFor = (day: Day, period: number): PlaceBody | null =>
+    tool
+      ? {
+          dayOfWeek: day,
+          startPeriod: period,
+          entryType: tool.entryType,
+          subjectId: tool.subjectId,
+          roomId: tool.entryType === "LAB" ? labRoomId : undefined,
+          periodSpan: tool.entryType === "LAB" ? labSpan : 1,
+        }
+      : null
+
   const handleCellClick = (day: Day, period: number) => {
-    if (!tool) return
     const cell = availabilityMap.get(`${day}:${period}`)
     if (!cell?.available) return
-    place.mutate({
-      dayOfWeek: day,
-      startPeriod: period,
-      entryType: tool.entryType,
-      subjectId: tool.subjectId,
-      roomId: tool.entryType === "LAB" ? labRoomId : undefined,
-      periodSpan: tool.entryType === "LAB" ? labSpan : 1,
-    })
+    const body = bodyFor(day, period)
+    if (body) place.mutate(body)
+  }
+
+  /**
+   * Place this hour as a combined class, taught alongside an existing one.
+   *
+   * The grid greys out the hour where this section's teacher is already
+   * busy — which is exactly the hour a combined class belongs in — so this
+   * is reached from the blocked cell itself rather than from a free one.
+   * The room comes from the class being joined, server-side: a combined
+   * class is one class, so it is in one room by definition.
+   */
+  const combineWith = (day: Day, period: number, conflictingEntryId: string) => {
+    const body = bodyFor(day, period)
+    if (body) place.mutate({ ...body, shareWithEntryId: conflictingEntryId })
   }
 
   return (
@@ -345,6 +372,25 @@ export function SectionBuilderPage() {
               if (!tool) return null
               const cell = availabilityMap.get(`${day}:${period}`)
               if (!cell) return null
+
+              // Blocked, but only because the same teacher is taking the
+              // same subject elsewhere this hour — which is precisely what a
+              // combined class is. Offer it rather than a dead cell.
+              const combinable = !cell.available && cell.combinableWithEntryId
+              if (combinable) {
+                return (
+                  <button
+                    type="button"
+                    disabled={place.isPending}
+                    title={`${cell.reason} — click to teach both sections together in one room.`}
+                    onClick={() => combineWith(day, period, cell.combinableWithEntryId!)}
+                    className="w-full h-11 text-[10px] font-medium leading-tight bg-warning/15 hover:bg-warning/30 text-warning cursor-pointer transition-colors"
+                  >
+                    combine
+                  </button>
+                )
+              }
+
               return (
                 <button
                   type="button"

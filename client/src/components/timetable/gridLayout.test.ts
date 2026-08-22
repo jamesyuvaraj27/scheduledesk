@@ -1,6 +1,6 @@
 import { test, describe } from "node:test"
 import assert from "node:assert/strict"
-import { buildDayCells, displayTime } from "./gridLayout.js"
+import { buildDayCells, buildDayLanes, displayTime } from "./gridLayout.js"
 import type { GridSlot, Day } from "@/lib/types"
 
 /** The real 8:00-3:00 day: break after period 2, lunch after period 5. */
@@ -119,6 +119,101 @@ describe("day cell layout", () => {
     assert.deepEqual(shape(cells), [
       "_1", "a:1", "BREAK", "b:1", "_4", "_5", "LUNCH", "_6", "_7",
     ])
+  })
+})
+
+describe("lanes for shared hours", () => {
+  test("a day with nothing overlapping is a single lane", () => {
+    const lanes = buildDayLanes<E>("MON", SLOTS, [
+      e({ id: "a", startPeriod: 1 }),
+      e({ id: "b", startPeriod: 3 }),
+    ])
+    assert.equal(lanes.length, 1)
+    assert.deepEqual(shape(lanes[0]), [
+      "a:1", "_2", "BREAK", "b:1", "_4", "_5", "LUNCH", "_6", "_7",
+    ])
+  })
+
+  test("an empty day still yields one lane, so the row is drawn", () => {
+    const lanes = buildDayLanes<E>("MON", SLOTS, [])
+    assert.equal(lanes.length, 1)
+    assert.deepEqual(shape(lanes[0]), [
+      "_1", "_2", "BREAK", "_3", "_4", "_5", "LUNCH", "_6", "_7",
+    ])
+  })
+
+  test("two classes in one hour become two lanes, neither lost", () => {
+    // The combined-section and shared-room case. Before lanes existed the
+    // second of these silently overwrote the first and vanished.
+    const lanes = buildDayLanes<E>("MON", SLOTS, [
+      e({ id: "csm-a", startPeriod: 1 }),
+      e({ id: "csm-b", startPeriod: 1 }),
+    ])
+    assert.equal(lanes.length, 2)
+    assert.deepEqual(shape(lanes[0])[0], "csm-a:1")
+    assert.deepEqual(shape(lanes[1])[0], "csm-b:1")
+  })
+
+  test("only the shared hour spills over; the rest stays on lane one", () => {
+    // The point the spec is emphatic about: one shared hour must not
+    // duplicate a whole timetable.
+    const lanes = buildDayLanes<E>("MON", SLOTS, [
+      e({ id: "shared-a", startPeriod: 1 }),
+      e({ id: "shared-b", startPeriod: 1 }),
+      e({ id: "solo", startPeriod: 4 }),
+    ])
+    assert.equal(lanes.length, 2)
+    assert.deepEqual(shape(lanes[0]), [
+      "shared-a:1", "_2", "BREAK", "_3", "solo:1", "_5", "LUNCH", "_6", "_7",
+    ])
+    // Lane two carries the extra class and nothing else.
+    assert.deepEqual(shape(lanes[1]), [
+      "shared-b:1", "_2", "BREAK", "_3", "_4", "_5", "LUNCH", "_6", "_7",
+    ])
+  })
+
+  test("a second lane is reused across the day rather than stacking up", () => {
+    const lanes = buildDayLanes<E>("MON", SLOTS, [
+      e({ id: "a1", startPeriod: 1 }),
+      e({ id: "a2", startPeriod: 1 }),
+      e({ id: "b1", startPeriod: 4 }),
+      e({ id: "b2", startPeriod: 4 }),
+    ])
+    assert.equal(lanes.length, 2, "two shared hours still need only two lanes")
+    assert.deepEqual(shape(lanes[1]), [
+      "a2:1", "_2", "BREAK", "_3", "b2:1", "_5", "LUNCH", "_6", "_7",
+    ])
+  })
+
+  test("three in one hour give three lanes", () => {
+    const lanes = buildDayLanes<E>("MON", SLOTS, [
+      e({ id: "x", startPeriod: 2 }),
+      e({ id: "y", startPeriod: 2 }),
+      e({ id: "z", startPeriod: 2 }),
+    ])
+    assert.equal(lanes.length, 3)
+  })
+
+  test("a lab overlapping a single class pushes only that class down", () => {
+    const lanes = buildDayLanes<E>("MON", SLOTS, [
+      e({ id: "lab", startPeriod: 3, periodSpan: 3 }),
+      e({ id: "clash", startPeriod: 4 }),
+    ])
+    assert.equal(lanes.length, 2)
+    assert.deepEqual(shape(lanes[0]), [
+      "_1", "_2", "BREAK", "lab:3", "LUNCH", "_6", "_7",
+    ])
+    assert.deepEqual(shape(lanes[1]), [
+      "_1", "_2", "BREAK", "_3", "clash:1", "_5", "LUNCH", "_6", "_7",
+    ])
+  })
+
+  test("other days are still ignored", () => {
+    const lanes = buildDayLanes<E>("MON", SLOTS, [
+      e({ id: "tue1", dayOfWeek: "TUE", startPeriod: 1 }),
+      e({ id: "tue2", dayOfWeek: "TUE", startPeriod: 1 }),
+    ])
+    assert.equal(lanes.length, 1, "Tuesday's shared hour must not widen Monday")
   })
 })
 

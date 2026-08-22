@@ -31,6 +31,7 @@ import {
   type RoomType,
   type SchedulingContext,
 } from "../lib/scheduling.js"
+import { joinSharedSlot, pruneSharedSlot } from "../lib/sharedSlots.js"
 
 export const roomsRouter = Router()
 
@@ -121,6 +122,7 @@ function contextForSection(
         subjectId: e.subjectId,
         facultyId: e.facultyId,
         roomId: e.roomId,
+        sharedSlotId: e.sharedSlotId,
       })
     ),
     curriculum: sectionSubjects
@@ -235,6 +237,10 @@ roomsRouter.get(
         query.startPeriod < e.startPeriod + e.periodSpan
     )
 
+    // Who is already in this room at this hour? Anything blocked purely by
+    // running into them can instead be offered as a deliberate share.
+    const occupants = covering.filter((e) => e.roomId === roomId)
+
     const options = covering.map((e) => {
       const conflicts = validatePlacement(
         {
@@ -247,9 +253,46 @@ roomsRouter.get(
           subjectId: e.subjectId,
           facultyId: e.facultyId,
           roomId,
+          sharedSlotId: e.sharedSlotId,
         },
         contextForSection(e.sectionId, loaded)
       )
+
+      // Would it go in if the office said "yes, share the room"? Re-run the
+      // same check with the two treated as a deliberate pair. Anything still
+      // failing (a faculty double-booking, most importantly) is a real
+      // problem that sharing does not fix, so no offer is made.
+      const shareTarget = occupants.find((o) => o.id !== e.id) ?? null
+      const shareable =
+        conflicts.length > 0 &&
+        shareTarget !== null &&
+        validatePlacement(
+          {
+            id: e.id,
+            sectionId: e.sectionId,
+            dayOfWeek: e.dayOfWeek as Day,
+            startPeriod: e.startPeriod,
+            periodSpan: e.periodSpan,
+            entryType: e.entryType as EntryType,
+            subjectId: e.subjectId,
+            facultyId: e.facultyId,
+            roomId,
+            sharedSlotId: shareTarget.sharedSlotId ?? `preview:${shareTarget.id}`,
+          },
+          {
+            ...contextForSection(e.sectionId, loaded),
+            entries: contextForSection(e.sectionId, loaded).entries.map((p) =>
+              p.id === shareTarget.id
+                ? {
+                    ...p,
+                    sharedSlotId:
+                      shareTarget.sharedSlotId ?? `preview:${shareTarget.id}`,
+                  }
+                : p
+            ),
+          }
+        ).length === 0
+
       return {
         entryId: e.id,
         label: classLabel(e),
@@ -260,6 +303,9 @@ roomsRouter.get(
         alreadyHere: e.roomId === roomId,
         available: conflicts.length === 0,
         reasons: conflicts,
+        /** Blocked as a plain move, but legal as a deliberate shared room. */
+        shareable,
+        shareWithEntryId: shareable ? (shareTarget?.id ?? null) : null,
       }
     })
 
@@ -283,7 +329,18 @@ roomsRouter.patch(
   "/entries/:id/room",
   asyncHandler(async (req, res) => {
     const entryId = param(req, "id")
-    const body = z.object({ roomId: z.string().nullable() }).parse(req.body)
+    const body = z
+      .object({
+        roomId: z.string().nullable(),
+        /**
+         * Set to deliberately put this class into a room another class is
+         * already using — the Shared Room case. Without it, running into an
+         * occupant is a ROOM_CLASH exactly as before, so an accidental
+         * double-booking still cannot be saved by mistake.
+         */
+        shareWithEntryId: z.string().nullish(),
+      })
+      .parse(req.body)
 
     const entry = await prisma.timetableEntry.findUnique({
       where: { id: entryId },
@@ -296,10 +353,43 @@ roomsRouter.patch(
     const loaded = await loadTermContext(entry.versionId)
     await assertEditable(loaded.version)
 
+    // Joining a share is what earns the exemption, so resolve it before
+    // validating rather than after.
+    //
+    // Moving a class OUT of the room it was sharing ends its part in that
+    // share — the tag would otherwise travel with it and exempt it from the
+    // checks somewhere else entirely.
+    const leavingShare =
+      entry.sharedSlotId !== null &&
+      !body.shareWithEntryId &&
+      body.roomId !== entry.roomId
+    let sharedSlotId = leavingShare ? null : entry.sharedSlotId
+    const abandonedSlot = leavingShare ? entry.sharedSlotId : null
+
+    if (body.shareWithEntryId) {
+      if (!body.roomId) {
+        throw new AppError(
+          "Sharing needs a room — clearing the room and sharing it are different things.",
+          422
+        )
+      }
+      sharedSlotId = await joinSharedSlot(body.shareWithEntryId, {
+        entryId: entry.id,
+        versionId: entry.versionId,
+        dayOfWeek: entry.dayOfWeek,
+        startPeriod: entry.startPeriod,
+        periodSpan: entry.periodSpan,
+        roomId: body.roomId,
+      })
+    }
+
     if (body.roomId) {
       const room = await prisma.room.findUnique({ where: { id: body.roomId } })
       if (!room) throw notFound("Room")
 
+      // Re-read: joinSharedSlot may have just tagged the target entry, and
+      // the context loaded above predates that write.
+      const fresh = await loadTermContext(entry.versionId)
       const conflicts = validatePlacement(
         {
           id: entry.id,
@@ -311,18 +401,22 @@ roomsRouter.patch(
           subjectId: entry.subjectId,
           facultyId: entry.facultyId,
           roomId: body.roomId,
+          sharedSlotId,
         },
-        contextForSection(entry.sectionId, loaded)
+        contextForSection(entry.sectionId, fresh)
       )
 
       if (conflicts.length > 0) {
+        // As in the create route: a refused share must not leave its tag
+        // behind on the class it tried to pair with.
+        if (body.shareWithEntryId) await pruneSharedSlot(sharedSlotId)
         throw new AppError("That room can't take this class.", 409, conflicts)
       }
     }
 
     const updated = await prisma.timetableEntry.update({
       where: { id: entryId },
-      data: { roomId: body.roomId },
+      data: { roomId: body.roomId, sharedSlotId },
       include: {
         room: true,
         subject: true,
@@ -330,6 +424,9 @@ roomsRouter.patch(
         section: { include: { branch: true } },
       },
     })
+
+    // If that left the old share with a single member, it isn't a share.
+    await pruneSharedSlot(abandonedSlot)
 
     res.json({
       id: updated.id,
