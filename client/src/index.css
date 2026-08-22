@@ -93,8 +93,12 @@
    that actually show up, and landscape so the period columns fit.
 --------------------------------------------------------------------------- */
 @media print {
+  /* A4 explicitly, not just "landscape" — PrintFitPage.tsx computes its
+     fit-to-page scale from A4's dimensions in JS, and the two have to agree
+     on what "one page" measures or the scaling math is against the wrong
+     page size. */
   @page {
-    size: landscape;
+    size: A4 landscape;
     margin: 12mm;
   }
 
@@ -128,9 +132,27 @@
     page-break-inside: avoid;
   }
 
+  /* The scroll wrapper around every TimetableTable clips anything wider than
+     the screen viewport — harmless on screen, but at print time there is no
+     horizontal scrolling, so a wide grid was silently cut off instead of
+     shrinking to fit. PrintFitPage scales the content down before this would
+     ever matter, but this stays as a second line of defence for any table
+     that isn't wrapped in one. */
+  .overflow-x-auto {
+    overflow: visible !important;
+  }
+
   /* Each section's sheet starts on a fresh page when printing the full set. */
   .print\:break-before-page {
     break-before: page;
+  }
+
+  /* Fallback for browsers/print engines that don't apply Tailwind's
+     break-inside-avoid utility under the print variant — keeps a
+     PrintFitPage block (grid + legend + room timetable) from splitting
+     across two pages even if the JS-side fit-to-page scaling didn't run. */
+  .print\:break-inside-avoid {
+    break-inside: avoid;
   }
 
   .rounded-xl {

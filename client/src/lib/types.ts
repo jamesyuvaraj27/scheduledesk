@@ -339,6 +339,7 @@ export interface PrintAllResponse {
     }
     entries: TimetableEntry[]
     legend: LegendRow[]
+    roomTimetable: SectionHomeRoomTimetable | null
   }[]
 }
 
@@ -364,6 +365,18 @@ export interface RoomTimetable {
   term: { id: string; label: string }
   room: Room
   grid: TimetableGrid
+  entries: RoomTimetableEntry[]
+}
+
+/**
+ * A room's own week, scoped down to the section that's being viewed/printed
+ * (the section's home room). Shares `RoomTimetableEntry` with the full admin
+ * Room Timetable page — same shape, just pre-filtered to one room server-side
+ * and attached alongside a section or print-all response instead of fetched
+ * separately.
+ */
+export interface SectionHomeRoomTimetable {
+  room: { id: string; name: string }
   entries: RoomTimetableEntry[]
 }
 
@@ -465,6 +478,8 @@ export interface PublicSectionTimetable {
   entries: PublicTimetableEntry[]
   /** Subject code -> faculty, printed under the grid. */
   legend: LegendRow[]
+  /** The section's home room's own full week, or null with no home room set. */
+  roomTimetable: SectionHomeRoomTimetable | null
 }
 
 /* --------------------------- Day-wise report ------------------------------ */

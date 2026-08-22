@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Select } from "@/components/ui/select"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
+import { RoomWeekGrid } from "@/components/timetable/RoomWeekGrid"
+import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { PrintAllResponse, TimetableEntry } from "@/lib/types"
@@ -68,61 +70,70 @@ export function PrintAllPage() {
           </CardContent>
         </Card>
       ) : (
-        withTimetables.map(({ section, entries, legend }, index) => (
+        withTimetables.map(({ section, entries, legend, roomTimetable }, index) => (
           <section
             key={section.id}
             className={cn(
-              "rounded-xl border bg-card p-5 print:border-0 print:p-0 print:rounded-none",
               // Each sheet starts a new page, but don't waste one before the first.
               index > 0 && "print:break-before-page"
             )}
           >
-            <header className="text-center mb-4">
-              <h2 className="font-semibold text-lg">
-                {section.branch.code ?? section.branch.name} · Section{" "}
-                {section.name} · Room {section.homeRoom?.name ?? "—"}
-              </h2>
-              <p className="text-sm font-medium mt-1">{section.branch.name}</p>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Year &amp; Sem : {toRoman(section.year)} — {data.term.label} ·{" "}
-                {section.department.code}
-              </p>
-            </header>
+            <PrintFitPage className="rounded-xl border bg-card p-5 print:border-0 print:p-0 print:rounded-none">
+              <header className="text-center mb-4">
+                <h2 className="font-semibold text-lg">
+                  {section.branch.code ?? section.branch.name} · Section{" "}
+                  {section.name} · Room {section.homeRoom?.name ?? "—"}
+                </h2>
+                <p className="text-sm font-medium mt-1">{section.branch.name}</p>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Year &amp; Sem : {toRoman(section.year)} — {data.term.label} ·{" "}
+                  {section.department.code}
+                </p>
+              </header>
 
-            <TimetableTable<TimetableEntry>
-              slots={data.grid.slots}
-              workingDays={data.grid.workingDays}
-              entries={entries}
-              renderEntry={(entry, isFirstRun) => (
-                <div
-                  className={cn(
-                    "w-full h-11 flex items-center justify-center px-1 text-xs font-semibold",
-                    entry.entryType === "LAB" && "bg-warning/15",
-                    !entry.subject && "text-muted-foreground"
-                  )}
-                >
-                  {entry.subject
-                    ? entry.subject.code
-                    : entry.entryType === "COUNSELING"
-                      ? "COUN"
-                      : entry.entryType.slice(0, 3)}
-                  {entry.entryType === "LAB" && isFirstRun && (
-                    <span className="font-normal ml-1">LAB</span>
-                  )}
+              <TimetableTable<TimetableEntry>
+                slots={data.grid.slots}
+                workingDays={data.grid.workingDays}
+                entries={entries}
+                renderEntry={(entry, isFirstRun) => (
+                  <div
+                    className={cn(
+                      "w-full h-11 flex items-center justify-center px-1 text-xs font-semibold",
+                      entry.entryType === "LAB" && "bg-warning/15",
+                      !entry.subject && "text-muted-foreground"
+                    )}
+                  >
+                    {entry.subject
+                      ? entry.subject.code
+                      : entry.entryType === "COUNSELING"
+                        ? "COUN"
+                        : entry.entryType.slice(0, 3)}
+                    {entry.entryType === "LAB" && isFirstRun && (
+                      <span className="font-normal ml-1">LAB</span>
+                    )}
+                  </div>
+                )}
+              />
+
+              {legend.length > 0 && (
+                <div className="mt-4 grid gap-x-10 gap-y-1 sm:grid-cols-2 text-sm">
+                  {legend.map((l) => (
+                    <div key={l.subjectId} className="flex gap-2">
+                      <span className="font-semibold min-w-16">{l.code}:</span>
+                      <span>{facultyLabel(l)}</span>
+                    </div>
+                  ))}
                 </div>
               )}
-            />
 
-            {legend.length > 0 && (
-              <div className="mt-4 grid gap-x-10 gap-y-1 sm:grid-cols-2 text-sm">
-                {legend.map((l) => (
-                  <div key={l.subjectId} className="flex gap-2">
-                    <span className="font-semibold min-w-16">{l.code}:</span>
-                    <span>{facultyLabel(l)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
+              {roomTimetable && (
+                <RoomWeekGrid
+                  roomTimetable={roomTimetable}
+                  slots={data.grid.slots}
+                  workingDays={data.grid.workingDays}
+                />
+              )}
+            </PrintFitPage>
           </section>
         ))
       )}

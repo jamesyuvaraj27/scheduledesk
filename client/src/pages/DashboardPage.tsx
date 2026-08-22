@@ -147,14 +147,19 @@ function SectionRow({ row }: { row: BuildStatusRow }) {
       ? Math.min(100, Math.round((timetable.placedPeriods / timetable.requiredPeriods) * 100))
       : 0
 
+  // Every admin screen lives under /admin/* — these must stay in sync with
+  // the routes in App.tsx. Missing the prefix here previously sent Continue,
+  // View, Assign faculty etc. to absolute paths outside /admin, which the
+  // catch-all redirects bounced straight back to the dashboard (this is what
+  // made "Continue" look broken).
   const href =
     stage === "needs-room"
-      ? "/master-data"
+      ? "/admin/master-data"
       : stage === "needs-curriculum" || stage === "needs-faculty"
-        ? `/curriculum/${section.id}`
+        ? `/admin/curriculum/${section.id}`
         : stage === "done"
-          ? `/sections/${section.id}/timetable`
-          : `/sections/${section.id}/builder`
+          ? `/admin/sections/${section.id}/timetable`
+          : `/admin/sections/${section.id}/builder`
 
   return (
     <li className="py-2.5">
@@ -211,12 +216,12 @@ function SetupChecklist({
   hasTerm: boolean
 }) {
   const steps = [
-    { done: counts.departments > 0, label: "Add departments and branches", to: "/master-data" },
-    { done: counts.rooms > 0, label: "Add rooms — classrooms and labs", to: "/master-data" },
-    { done: counts.sections > 0, label: "Add sections with a home classroom", to: "/master-data" },
-    { done: counts.subjects > 0, label: "Add subjects with their short codes", to: "/master-data" },
-    { done: counts.faculty > 0, label: "Add faculty and what they can teach", to: "/master-data" },
-    { done: hasTerm, label: "Create a term and set the daily timings", to: "/term-setup" },
+    { done: counts.departments > 0, label: "Add departments and branches", to: "/admin/master-data" },
+    { done: counts.rooms > 0, label: "Add rooms — classrooms and labs", to: "/admin/master-data" },
+    { done: counts.sections > 0, label: "Add sections with a home classroom", to: "/admin/master-data" },
+    { done: counts.subjects > 0, label: "Add subjects with their short codes", to: "/admin/master-data" },
+    { done: counts.faculty > 0, label: "Add faculty and what they can teach", to: "/admin/master-data" },
+    { done: hasTerm, label: "Create a term and set the daily timings", to: "/admin/term-setup" },
   ]
   const next = steps.find((s) => !s.done)
 

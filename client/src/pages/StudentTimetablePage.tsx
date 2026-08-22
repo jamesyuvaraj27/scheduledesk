@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
+import { RoomWeekGrid } from "@/components/timetable/RoomWeekGrid"
+import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type {
@@ -178,10 +180,10 @@ export function StudentTimetablePage() {
 /* -------------------------------------------------------------------------- */
 
 function WeekGrid({ data }: { data: PublicSectionTimetable }) {
-  const { section, grid, entries, legend, term } = data
+  const { section, grid, entries, legend, term, roomTimetable } = data
 
   return (
-    <div className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
+    <PrintFitPage className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
       <header className="text-center mb-4">
         <h1 className="font-semibold text-xl">
           {section.branchCode} · Section {section.name}
@@ -225,13 +227,21 @@ function WeekGrid({ data }: { data: PublicSectionTimetable }) {
             </div>
           )}
 
+          {roomTimetable && (
+            <RoomWeekGrid
+              roomTimetable={roomTimetable}
+              slots={grid.slots}
+              workingDays={grid.workingDays}
+            />
+          )}
+
           <p className="text-xs text-muted-foreground mt-3 print:hidden">
             Scroll the grid sideways on a narrow screen, or pick a single day
             above for a list that fits.
           </p>
         </>
       )}
-    </div>
+    </PrintFitPage>
   )
 }
 

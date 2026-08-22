@@ -4,6 +4,7 @@ import { ArrowLeft, Pencil, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
+import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { SectionTimetable, TimetableEntry } from "@/lib/types"
@@ -47,7 +48,7 @@ export function SectionTimetablePage() {
         </div>
       </div>
 
-      <div className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
+      <PrintFitPage className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
         <header className="text-center mb-4">
           {/* Branch, section and room lead the sheet — it's how the office
               identifies which timetable they're holding. */}
@@ -102,7 +103,7 @@ export function SectionTimetablePage() {
         )}
 
         <RoomAllocationGrid data={data} />
-      </div>
+      </PrintFitPage>
     </div>
   )
 }

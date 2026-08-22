@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
+import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { Faculty, FacultyTimetable } from "@/lib/types"
@@ -100,8 +101,8 @@ function FacultyGrid({ data }: { data: FacultyTimetable }) {
   const { faculty, grid, entries, summary, term } = data
 
   return (
-    <>
-      <Card>
+    <PrintFitPage>
+      <Card className="print:border-0 print:shadow-none">
         <CardHeader>
           <CardTitle className="text-base">
             {faculty.facultyNo} — {faculty.name}
@@ -121,7 +122,7 @@ function FacultyGrid({ data }: { data: FacultyTimetable }) {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="mt-4 print:border-0 print:shadow-none">
         <CardContent className="pt-5">
           {entries.length === 0 ? (
             <EmptyState
@@ -171,7 +172,7 @@ function FacultyGrid({ data }: { data: FacultyTimetable }) {
           </p>
         </CardContent>
       </Card>
-    </>
+    </PrintFitPage>
   )
 }
 

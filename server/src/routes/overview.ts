@@ -19,6 +19,23 @@ import {
 
 export const overviewRouter = Router()
 
+const ROMAN = ["", "I", "II", "III", "IV"]
+
+/**
+ * The label printed on a room-timetable cell: YEAR_BRANCH_SECTION_SUBJECT,
+ * e.g. `IV_CSM_A_CN` — matches the admin Room Timetable page and the public
+ * student view, so the same shorthand reads the same everywhere it's printed.
+ */
+function roomEntryLabel(e: {
+  section: { year: number; name: string; branch: { code: string } }
+  subject: { code: string } | null
+  entryType: string
+}): string {
+  const year = ROMAN[e.section.year] ?? String(e.section.year)
+  const what = e.subject?.code ?? e.entryType
+  return `${year}_${e.section.branch.code}_${e.section.name}_${what}`.replace(/\s+/g, "_")
+}
+
 /**
  * Whole-college views: how far along every section is, and everything needed
  * to print the full set of timetables at once.
@@ -217,6 +234,13 @@ overviewRouter.get(
       ])
     )
 
+    // Needed to label a room-timetable entry that belongs to a DIFFERENT
+    // section than the one being printed — `entries` here already spans the
+    // whole term (that's how faculty/room clashes across sections are
+    // caught), it's just missing branch/section display fields, which live
+    // on `sections` (already loaded once above).
+    const sectionsById = new Map(sections.map((s) => [s.id, s]))
+
     res.json({
       term: { id: term.id, label: term.label },
       version: { id: version.id, kind: version.kind, label: version.label },
@@ -226,43 +250,89 @@ overviewRouter.get(
         workingDays: cfg.workingDays,
         numPeriods: cfg.numPeriods,
       },
-      sections: wanted.map((section) => ({
-        section: {
-          id: section.id,
-          name: section.name,
-          year: section.year,
-          branch: { code: section.branch.code, name: section.branch.name },
-          department: { code: section.branch.department.code },
-          homeRoom: section.homeRoom,
-        },
-        entries: entries
-          .filter((e) => e.sectionId === section.id)
-          .map((e) => ({
-            id: e.id,
-            dayOfWeek: e.dayOfWeek,
-            startPeriod: e.startPeriod,
-            periodSpan: e.periodSpan,
-            entryType: e.entryType,
-            subject: e.subject,
-            faculty: e.faculty,
-            room: e.room,
-          })),
-        legend: sectionSubjects
-          .filter((ss) => ss.sectionId === section.id)
-          .map((ss) => {
-            const facultyId = assignments.find(
-              (a) => a.sectionId === section.id && a.subjectId === ss.subjectId
-            )?.facultyId
-            const f = facultyId ? (facultyById.get(facultyId) ?? null) : null
-            return {
-              subjectId: ss.subjectId,
-              code: ss.subject.code,
-              facultyName: f?.name ?? null,
-              facultyNo: f?.facultyNo ?? null,
+      sections: wanted.map((section) => {
+        // The section's home room's own full week — every class using that
+        // room, from any section — not just this section's periods relabelled.
+        // Read straight off entries already loaded for the whole term, so a
+        // shared lab or a room double-booked across years shows up here too.
+        const roomTimetable = section.homeRoomId
+          ? {
+              room: { id: section.homeRoom!.id, name: section.homeRoom!.name },
+              entries: entries
+                .filter((e) => e.roomId === section.homeRoomId)
+                .map((e) => {
+                  const owner = sectionsById.get(e.sectionId)!
+                  return {
+                    id: e.id,
+                    dayOfWeek: e.dayOfWeek,
+                    startPeriod: e.startPeriod,
+                    periodSpan: e.periodSpan,
+                    entryType: e.entryType,
+                    label: roomEntryLabel({
+                      section: {
+                        year: owner.year,
+                        name: owner.name,
+                        branch: { code: owner.branch.code },
+                      },
+                      subject: e.subject,
+                      entryType: e.entryType,
+                    }),
+                    section: {
+                      id: owner.id,
+                      name: owner.name,
+                      year: owner.year,
+                      branchCode: owner.branch.code,
+                    },
+                    subject: e.subject
+                      ? { id: e.subject.id, code: e.subject.code, name: e.subject.name }
+                      : null,
+                    faculty: e.faculty
+                      ? { id: e.faculty.id, name: e.faculty.name, facultyNo: e.faculty.facultyNo }
+                      : null,
+                  }
+                }),
             }
-          })
-          .sort((a, b) => a.code.localeCompare(b.code)),
-      })),
+          : null
+
+        return {
+          section: {
+            id: section.id,
+            name: section.name,
+            year: section.year,
+            branch: { code: section.branch.code, name: section.branch.name },
+            department: { code: section.branch.department.code },
+            homeRoom: section.homeRoom,
+          },
+          entries: entries
+            .filter((e) => e.sectionId === section.id)
+            .map((e) => ({
+              id: e.id,
+              dayOfWeek: e.dayOfWeek,
+              startPeriod: e.startPeriod,
+              periodSpan: e.periodSpan,
+              entryType: e.entryType,
+              subject: e.subject,
+              faculty: e.faculty,
+              room: e.room,
+            })),
+          legend: sectionSubjects
+            .filter((ss) => ss.sectionId === section.id)
+            .map((ss) => {
+              const facultyId = assignments.find(
+                (a) => a.sectionId === section.id && a.subjectId === ss.subjectId
+              )?.facultyId
+              const f = facultyId ? (facultyById.get(facultyId) ?? null) : null
+              return {
+                subjectId: ss.subjectId,
+                code: ss.subject.code,
+                facultyName: f?.name ?? null,
+                facultyNo: f?.facultyNo ?? null,
+              }
+            })
+            .sort((a, b) => a.code.localeCompare(b.code)),
+          roomTimetable,
+        }
+      }),
     })
   })
 )

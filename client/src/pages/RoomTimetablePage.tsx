@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog } from "@/components/ui/dialog"
 import { ErrorState, LoadingState, EmptyState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
+import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type {
@@ -119,7 +120,7 @@ function RoomGrid({ roomId }: { roomId: string }) {
   if (!data) return null
 
   return (
-    <div className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
+    <PrintFitPage className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
       <header className="text-center mb-4">
         <h2 className="font-semibold text-lg">Room: {data.room.name}</h2>
         <p className="text-sm text-muted-foreground mt-0.5">
@@ -255,7 +256,7 @@ function RoomGrid({ roomId }: { roomId: string }) {
           </div>
         </Dialog>
       )}
-    </div>
+    </PrintFitPage>
   )
 }
 
