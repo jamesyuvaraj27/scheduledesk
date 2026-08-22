@@ -18,12 +18,23 @@ import * as React from "react"
  * page-sized block.
  *
  * These page dimensions must stay in sync with the `@page` rule in index.css
- * (landscape, 12mm margins).
+ * (A4 landscape, 12mm margins).
  */
 const PAGE_WIDTH_MM = 297
 const PAGE_HEIGHT_MM = 210
 const PAGE_MARGIN_MM = 12
 const MM_TO_PX = 96 / 25.4
+
+/**
+ * How far this will shrink before it gives up and lets the content run onto a
+ * second page.
+ *
+ * Without a floor, a very tall sheet scales itself down to something nobody
+ * can read and the page silently *looks* fine — the failure is invisible,
+ * which is the worst kind. Below this, two legible pages beat one unreadable
+ * one. 0.55 is roughly where an 11px cell label stops being readable in print.
+ */
+const MIN_SCALE = 0.55
 
 const PAGE_CONTENT_WIDTH_PX = (PAGE_WIDTH_MM - PAGE_MARGIN_MM * 2) * MM_TO_PX
 const PAGE_CONTENT_HEIGHT_PX = (PAGE_HEIGHT_MM - PAGE_MARGIN_MM * 2) * MM_TO_PX
@@ -60,12 +71,16 @@ export function PrintFitPage({
       const naturalHeight = inner.scrollHeight
       if (!naturalWidth || !naturalHeight) return
 
-      const scale = Math.min(
+      const needed = Math.min(
         1,
         PAGE_CONTENT_WIDTH_PX / naturalWidth,
         PAGE_CONTENT_HEIGHT_PX / naturalHeight
       )
-      if (scale >= 1) return // already fits — leave it full size and crisp
+      if (needed >= 1) return // already fits — leave it full size and crisp
+
+      // Shrink as far as the floor allows. If the floor wasn't enough, the
+      // content will span two pages — legibly — rather than one unreadable one.
+      const scale = Math.max(needed, MIN_SCALE)
 
       inner.style.transformOrigin = "top left"
       inner.style.transform = `scale(${scale})`

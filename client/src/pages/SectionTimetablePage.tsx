@@ -4,6 +4,7 @@ import { ArrowLeft, Pencil, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
+import { ClassCell } from "@/components/timetable/ClassCell"
 import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -11,7 +12,13 @@ import type { SectionTimetable, TimetableEntry } from "@/lib/types"
 
 /**
  * The printable section timetable, laid out like the sheet the office
- * already uses: header block, grid, subject/faculty legend, room sub-grid.
+ * already uses: header block, grid, colour key, subject/faculty legend.
+ *
+ * Each cell now carries the subject, who takes it and the room, so the grid
+ * answers a period completely on its own. The Room Allocation grid below is
+ * kept deliberately — it's an admin working aid ("which of MY periods sit in
+ * which room"), a different question from the room's own week on the Rooms
+ * page, and it is not shown to students.
  */
 export function SectionTimetablePage() {
   const { sectionId = "" } = useParams()
@@ -72,27 +79,30 @@ export function SectionTimetablePage() {
           workingDays={grid.workingDays}
           entries={entries}
           renderEntry={(entry, isFirstRun) => (
-            <div
-              className={cn(
-                "w-full h-11 flex items-center justify-center px-1 text-xs font-semibold",
-                entry.entryType === "LAB" && "bg-warning/15",
-                !entry.subject && "text-muted-foreground"
-              )}
-            >
-              {entry.subject
-                ? entry.subject.code
-                : entry.entryType === "COUNSELING"
-                  ? "COUN"
-                  : entry.entryType.slice(0, 3)}
-              {entry.entryType === "LAB" && isFirstRun && (
-                <span className="font-normal ml-1">LAB</span>
-              )}
+            <ClassCell
+              entryType={entry.entryType}
+              isFirstRun={isFirstRun}
+              primary={entry.subject?.code}
+              faculty={entry.faculty?.name}
+              room={entry.room?.name}
+              title={[
+                entry.subject?.name,
+                entry.faculty?.name,
+                entry.room?.name,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            />
+          )}
+          renderEmpty={() => (
+            <div className="w-full h-full min-h-[3.5rem] flex items-center justify-center text-[10px] text-muted-foreground/50">
+              free
             </div>
           )}
         />
 
         {legend.length > 0 && (
-          <div className="mt-4 grid gap-x-10 gap-y-1 sm:grid-cols-2 text-sm">
+          <div className="mt-3 pt-3 border-t grid gap-x-10 gap-y-1 sm:grid-cols-2 text-sm">
             {legend.map((l) => (
               <div key={l.subjectId} className="flex gap-2">
                 <span className="font-semibold min-w-16">{l.code}:</span>
@@ -122,7 +132,7 @@ function RoomAllocationGrid({ data }: { data: SectionTimetable }) {
 
   return (
     <div className="mt-6">
-      <div className="flex items-baseline justify-between gap-3 mb-1">
+      <div className="flex items-baseline justify-between gap-3 mb-1 flex-wrap">
         <p className="text-sm font-semibold">Room Allocation</p>
         <Link
           to="/admin/rooms"
@@ -131,6 +141,10 @@ function RoomAllocationGrid({ data }: { data: SectionTimetable }) {
           Allocate from room timetables
         </Link>
       </div>
+      <p className="text-xs text-muted-foreground mb-1.5 print:hidden">
+        An admin working view — which room each of this section&rsquo;s own
+        periods sits in. Students never see it.
+      </p>
 
       <TimetableTable<TimetableEntry>
         slots={grid.slots}
@@ -139,8 +153,8 @@ function RoomAllocationGrid({ data }: { data: SectionTimetable }) {
         renderEntry={(entry, isFirstRun) => (
           <div
             className={cn(
-              "w-full h-11 flex items-center justify-center px-1 text-xs",
-              entry.entryType === "LAB" && "bg-warning/15 font-medium",
+              "w-full h-full min-h-[3.5rem] flex items-center justify-center px-1 text-xs",
+              entry.entryType === "LAB" && "font-medium",
               !entry.room && "text-muted-foreground italic"
             )}
           >

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { Link, useParams, useNavigate } from "react-router-dom"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { Printer, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -80,6 +80,11 @@ export function RoomTimetablePage() {
           <Button size="sm" onClick={() => window.print()}>
             <Printer /> Print
           </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/admin/print/rooms">
+              <Printer /> Print all
+            </Link>
+          </Button>
         </div>
       </div>
 
@@ -144,19 +149,26 @@ function RoomGrid({ roomId }: { roomId: string }) {
             type="button"
             onClick={() => setInspecting(entry)}
             className={cn(
-              "w-full h-full min-h-11 px-1 py-1 text-[11px] leading-tight font-medium",
-              "hover:bg-muted/70 transition-colors break-words",
-              entry.entryType === "LAB" && "bg-warning/15"
+              "w-full h-full min-h-[3.5rem] px-1 py-1 leading-tight",
+              "flex flex-col items-center justify-center break-words",
+              "hover:brightness-95 transition-[filter]"
             )}
           >
-            {isFirstRun ? entry.label : ""}
+            {isFirstRun && (
+              <>
+                <span className="text-[11px] font-bold">{entry.label}</span>
+                {entry.faculty && (
+                  <span className="text-[9px] opacity-90">{entry.faculty.name}</span>
+                )}
+              </>
+            )}
           </button>
         )}
         renderEmpty={(day, period) => (
           <button
             type="button"
             onClick={() => setPicking({ day, period })}
-            className="w-full h-full min-h-11 text-muted-foreground/40 hover:bg-muted/60 hover:text-foreground transition-colors text-lg leading-none print:hidden"
+            className="w-full h-full min-h-[3.5rem] text-muted-foreground/40 hover:bg-muted/60 hover:text-foreground transition-colors text-lg leading-none print:hidden"
             aria-label={`Allocate a class to ${day} period ${period}`}
           >
             +
@@ -164,9 +176,10 @@ function RoomGrid({ roomId }: { roomId: string }) {
         )}
       />
 
-      <p className="text-xs text-muted-foreground mt-3 print:hidden">
-        Each cell shows YEAR_BRANCH_SECTION_SUBJECT. Allocating a class here
-        fills the same period in that section's Room Allocation table.
+      <p className="text-xs text-muted-foreground mt-2 print:hidden">
+        Each cell shows YEAR_BRANCH_SECTION_SUBJECT and who takes it. Allocating
+        a class here fills the same period in that section&rsquo;s Room
+        Allocation table.
       </p>
 
       {picking && (

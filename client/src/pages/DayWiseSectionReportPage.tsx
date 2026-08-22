@@ -245,7 +245,7 @@ function ReportTable({
 function ReportCell({ cell }: { cell: DayCell<PublicTimetableEntry> }) {
   if (cell.kind === "pause") {
     return (
-      <td className="border bg-muted px-1 py-2 text-center text-[11px] font-semibold tracking-wide text-muted-foreground">
+      <td className="border px-1 py-2 text-center text-[11px] font-semibold tracking-wide bg-muted/40">
         {cell.label}
       </td>
     )
@@ -261,13 +261,7 @@ function ReportCell({ cell }: { cell: DayCell<PublicTimetableEntry> }) {
 
   const entry = cell.entry
   return (
-    <td
-      colSpan={cell.colSpan}
-      className={cn(
-        "border px-1.5 py-1.5 text-center align-top",
-        entry.entryType === "LAB" && "bg-warning/15"
-      )}
-    >
+    <td colSpan={cell.colSpan} className="border px-1.5 py-1.5 text-center align-top">
       <div className="text-xs font-semibold leading-tight">{activityLabel(entry)}</div>
       <div
         className={cn(
@@ -275,7 +269,8 @@ function ReportCell({ cell }: { cell: DayCell<PublicTimetableEntry> }) {
           !entry.faculty && "text-muted-foreground italic"
         )}
       >
-        {entry.faculty ? entry.faculty.label : "Faculty: Not Assigned"}
+        {/* Name only — the public API sends no faculty number. */}
+        {entry.faculty ? entry.faculty.name : "Faculty: Not Assigned"}
       </div>
       <div
         className={cn(

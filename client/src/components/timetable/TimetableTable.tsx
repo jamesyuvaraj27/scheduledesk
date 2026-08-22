@@ -32,10 +32,15 @@ export function TimetableTable<T extends HasPlacement>({
   const periodSlots = slots.filter((s) => s.kind === "PERIOD")
 
   return (
-    <div className="overflow-x-auto">
+    // Scrolls inside its own box on a narrow screen so the page itself never
+    // scrolls sideways. `overscroll-x-contain` stops a swipe that reaches the
+    // end of the grid from dragging the whole page with it on iOS.
+    <div className="overflow-x-auto overscroll-x-contain -mx-1 px-1">
       <table
         className={cn(
-          "border-collapse text-center text-sm w-full min-w-[720px] table-fixed",
+          // Wider than it used to be: cells now carry subject, faculty and
+          // room rather than a bare subject code.
+          "border-collapse text-center text-sm w-full min-w-[860px] table-fixed",
           className
         )}
       >
@@ -136,11 +141,11 @@ function Cell<T extends HasPlacement>({
     return (
       <td
         rowSpan={rowCount}
-        className="border bg-muted p-0 align-middle"
+        className={cn("border p-0 align-middle bg-muted/40")}
         aria-label={cell.label}
       >
         <div
-          className="text-[10px] font-semibold tracking-widest text-muted-foreground mx-auto"
+          className="text-[10px] font-semibold tracking-widest mx-auto"
           style={{ writingMode: "vertical-rl", transform: "rotate(180deg)" }}
         >
           {cell.label}
@@ -151,14 +156,14 @@ function Cell<T extends HasPlacement>({
 
   if (cell.kind === "empty") {
     return (
-      <td className="border p-0 h-11">
+      <td className="border p-0 h-14">
         {renderEmpty?.(day, cell.period) ?? null}
       </td>
     )
   }
 
   return (
-    <td colSpan={cell.colSpan} className="border p-0 h-11">
+    <td colSpan={cell.colSpan} className="border p-0 h-14">
       {renderEntry(cell.entry, cell.isFirstRun)}
     </td>
   )

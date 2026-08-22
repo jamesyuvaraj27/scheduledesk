@@ -19,6 +19,8 @@ import { RoomTimetablePage } from "@/pages/RoomTimetablePage"
 import { ResetYearPage } from "@/pages/ResetYearPage"
 import { WorkingTimetablePage } from "@/pages/WorkingTimetablePage"
 import { PrintAllPage } from "@/pages/PrintAllPage"
+import { PrintAllFacultyPage } from "@/pages/PrintAllFacultyPage"
+import { PrintAllRoomsPage } from "@/pages/PrintAllRoomsPage"
 import { DayWiseSectionReportPage } from "@/pages/DayWiseSectionReportPage"
 import { LoadingState } from "@/components/ui/feedback"
 
@@ -88,6 +90,8 @@ function App() {
           <Route path="faculty/:facultyId" element={<FacultyTimetablePage />} />
           <Route path="working-timetable" element={<WorkingTimetablePage />} />
           <Route path="print" element={<PrintAllPage />} />
+          <Route path="print/faculty" element={<PrintAllFacultyPage />} />
+          <Route path="print/rooms" element={<PrintAllRoomsPage />} />
           <Route path="reset" element={<ResetYearPage />} />
         </Route>
 

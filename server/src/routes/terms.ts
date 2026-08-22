@@ -4,6 +4,9 @@ import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
 import { buildDayGrid, dayEndTime } from "../lib/periods.js"
 import { ensureLiveVersion } from "../lib/versions.js"
+// Reused rather than re-implemented: the Delete All Data gate checks the same
+// password, the same way, as signing in does.
+import { adminPasswordIsConfigured, passwordMatches } from "../lib/auth.js"
 
 export const termsRouter = Router()
 
@@ -389,5 +392,173 @@ termsRouter.post(
     }
 
     res.status(201).json({ ...withGrid(term), copiedCurriculumRows })
+  })
+)
+
+/* -------------------------------------------------------------------------- */
+/*                     Delete All Data — the irreversible one                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Everything below is separate from Academic Year Reset on purpose, and it is
+ * worth being clear about the difference:
+ *
+ *   Reset      keeps every department, branch, section, room, subject and
+ *              faculty member, and keeps last year's timetables as history.
+ *              It is what you want at the end of a year.
+ *
+ *   Delete All empties every table. There is no undo, no archive and no
+ *              "make the old term active again" — the rows are gone. It is
+ *              for handing this installation to a different college, or for
+ *              wiping a test setup before real data goes in.
+ *
+ * Two independent gates protect it: the admin password (checked against the
+ * same helper the login uses, so there is one source of truth) and an exact
+ * confirmation phrase. Both must pass, and the route is already behind the
+ * admin cookie gate mounted in index.ts.
+ */
+
+const CONFIRM_PHRASE = "DELETE ALL DATA"
+
+const deleteAllSchema = z.object({
+  password: z.string().min(1, "Enter the admin password"),
+  confirmText: z.string(),
+})
+
+/** What is about to be destroyed, so the dialog can show real numbers. */
+async function countEverything() {
+  const [
+    timetableEntries,
+    timetableVersions,
+    sectionAssignments,
+    sectionSubjects,
+    facultySubjects,
+    timeConfigs,
+    terms,
+    sections,
+    subjects,
+    faculty,
+    rooms,
+    branches,
+    departments,
+  ] = await Promise.all([
+    prisma.timetableEntry.count(),
+    prisma.timetableVersion.count(),
+    prisma.sectionAssignment.count(),
+    prisma.sectionSubject.count(),
+    prisma.facultySubject.count(),
+    prisma.timeConfig.count(),
+    prisma.academicTerm.count(),
+    prisma.section.count(),
+    prisma.subject.count(),
+    prisma.faculty.count(),
+    prisma.room.count(),
+    prisma.branch.count(),
+    prisma.department.count(),
+  ])
+
+  return {
+    timetableEntries,
+    timetableVersions,
+    sectionAssignments,
+    sectionSubjects,
+    facultySubjects,
+    timeConfigs,
+    terms,
+    sections,
+    subjects,
+    faculty,
+    rooms,
+    branches,
+    departments,
+  }
+}
+
+termsRouter.get(
+  "/delete-all-preview",
+  asyncHandler(async (_req, res) => {
+    const counts = await countEverything()
+    res.json({
+      confirmPhrase: CONFIRM_PHRASE,
+      counts,
+      total: Object.values(counts).reduce((n, v) => n + v, 0),
+    })
+  })
+)
+
+termsRouter.post(
+  "/delete-all",
+  asyncHandler(async (req, res) => {
+    const body = deleteAllSchema.parse(req.body)
+
+    if (!adminPasswordIsConfigured()) {
+      throw new AppError(
+        "No admin password is configured on the server, so this can't be authorised.",
+        409
+      )
+    }
+    if (!passwordMatches(body.password)) {
+      throw new AppError("That admin password isn't right.", 401)
+    }
+    // Exact match, case included — "delete all data" does not count.
+    if (body.confirmText !== CONFIRM_PHRASE) {
+      throw new AppError(
+        `Type ${CONFIRM_PHRASE} exactly, in capitals, to confirm.`,
+        400
+      )
+    }
+
+    const before = await countEverything()
+
+    /**
+     * Order matters. Several foreign keys on this schema are RESTRICT rather
+     * than CASCADE, so deleting in the wrong order raises a Postgres 23001
+     * partway through. Working from the leaves inward:
+     *
+     *   entries/assignments/curriculum/eligibility  reference everything
+     *   versions + timeConfig                       reference the term
+     *   terms                                        now unreferenced
+     *   sections                                     reference branch + room
+     *   subjects                                     reference branch
+     *   faculty                                      reference department
+     *   rooms                                        now unreferenced
+     *   branches                                     reference department
+     *   departments                                  last
+     *
+     * Prisma's array form of $transaction runs all of these inside ONE
+     * Postgres transaction: if any statement fails, every earlier one is
+     * rolled back and the database is exactly as it was. Partial deletion is
+     * not a state this can end up in.
+     */
+    await prisma.$transaction([
+      prisma.timetableEntry.deleteMany({}),
+      prisma.sectionAssignment.deleteMany({}),
+      prisma.sectionSubject.deleteMany({}),
+      prisma.facultySubject.deleteMany({}),
+      prisma.timetableVersion.deleteMany({}),
+      prisma.timeConfig.deleteMany({}),
+      prisma.academicTerm.deleteMany({}),
+      prisma.section.deleteMany({}),
+      prisma.subject.deleteMany({}),
+      prisma.faculty.deleteMany({}),
+      prisma.room.deleteMany({}),
+      prisma.branch.deleteMany({}),
+      prisma.department.deleteMany({}),
+    ])
+
+    const after = await countEverything()
+    const remaining = Object.values(after).reduce((n, v) => n + v, 0)
+
+    // Belt and braces: if anything survived, say so rather than reporting
+    // success. A non-zero count here means a table was added to the schema
+    // and not added to the transaction above.
+    if (remaining > 0) {
+      throw new AppError(
+        `Deletion finished but ${remaining} rows remain. Nothing else was changed — please report this.`,
+        500
+      )
+    }
+
+    res.json({ deleted: before, remaining: after })
   })
 )

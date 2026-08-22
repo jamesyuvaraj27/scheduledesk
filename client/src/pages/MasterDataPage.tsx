@@ -160,6 +160,18 @@ function FilterSelect({
   )
 }
 
+/**
+ * Ordinal year labels for the Sections filter — "2nd Year" reads the way the
+ * office says it, where the "Year 2" wording used inside the create form is
+ * matching the database column.
+ */
+const YEAR_FILTER_OPTIONS = [
+  { value: "1", label: "1st Year" },
+  { value: "2", label: "2nd Year" },
+  { value: "3", label: "3rd Year" },
+  { value: "4", label: "4th Year" },
+]
+
 /** Turn a filter state object into a query string, skipping empty values. */
 function qs(params: Record<string, string>): string {
   const search = new URLSearchParams()
@@ -261,12 +273,16 @@ function BranchesTab() {
 function SectionsTab() {
   const [deptFilter, setDeptFilter] = React.useState("")
   const [branchFilter, setBranchFilter] = React.useState("")
+  const [yearFilter, setYearFilter] = React.useState("")
   const depts = useList<Department>("/departments", ["departments"])
   const branches = useList<Branch>("/branches", ["branches"])
   const rooms = useList<Room>("/rooms", ["rooms"])
+  // `?year=` is filtered server-side (masterData.ts), like department and
+  // branch — so picking 2nd Year fetches only 2nd-year sections rather than
+  // downloading every section and hiding most of them.
   const list = useList<Section>(
-    `/sections${qs({ departmentId: deptFilter, branchId: branchFilter })}`,
-    ["sections", deptFilter, branchFilter]
+    `/sections${qs({ departmentId: deptFilter, branchId: branchFilter, year: yearFilter })}`,
+    ["sections", deptFilter, branchFilter, yearFilter]
   )
 
   // Branch options follow the chosen department, and a branch picked under a
@@ -296,6 +312,13 @@ function SectionsTab() {
       columns={["Section", "Year", "Branch", "Home room"]}
       toolbar={
         <>
+          <FilterSelect
+            label="Year"
+            value={yearFilter}
+            onChange={setYearFilter}
+            allLabel="All years"
+            options={YEAR_FILTER_OPTIONS}
+          />
           <FilterSelect
             label="Department"
             value={deptFilter}

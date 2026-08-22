@@ -12,6 +12,16 @@
  *   2. It never writes. There is no POST/PATCH/PUT/DELETE in this router at
  *      all, and it is mounted before the admin gate, so a public visitor
  *      cannot reach an admin route by guessing a URL.
+ *
+ * A third rule was added on 2026-08-22:
+ *
+ *   3. It never emits an internal faculty identifier. `Faculty.facultyNo`
+ *      (FAC001, the college's own numbering) is admin-only and is stripped
+ *      from every response in this file — not hidden by the UI, absent from
+ *      the JSON, so it isn't in view-source or the network tab either. The
+ *      opaque `id` cuid stays, because the class-adjustment page needs a
+ *      handle to select a faculty member by; it is never displayed and
+ *      carries no college meaning.
  */
 
 import { Router } from "express"
@@ -68,23 +78,12 @@ function sectionLabel(s: {
   return `${ROMAN[s.year] ?? s.year} ${s.branch.code}-${s.name}`
 }
 
-function facultyLabel(f: { facultyNo: string; name: string } | null): string | null {
-  return f ? `${f.facultyNo} — ${f.name}` : null
-}
-
 /**
- * The label printed on a room-timetable cell: YEAR_BRANCH_SECTION_SUBJECT,
- * e.g. `IV_CSM_A_CN` — same format as the admin Room Timetable page, so a
- * student and the office are reading the same shorthand.
+ * How a faculty member is named publicly: their name, and nothing else.
+ * Deliberately does NOT take facultyNo — rule 3 above.
  */
-function roomEntryLabel(e: {
-  section: { year: number; name: string; branch: { code: string } }
-  subject: { code: string } | null
-  entryType: string
-}): string {
-  const year = ROMAN[e.section.year] ?? String(e.section.year)
-  const what = e.subject?.code ?? e.entryType
-  return `${year}_${e.section.branch.code}_${e.section.name}_${what}`.replace(/\s+/g, "_")
+function facultyLabel(f: { name: string } | null): string | null {
+  return f ? f.name : null
 }
 
 function titleCase(s: string): string {
@@ -166,7 +165,7 @@ publicRouter.get(
     // never list a subject the section isn't being taught.
     const legendMap = new Map<
       string,
-      { code: string; facultyName: string | null; facultyNo: string | null }
+      { code: string; facultyName: string | null }
     >()
     for (const e of entries) {
       const code =
@@ -175,59 +174,18 @@ publicRouter.get(
           ? null
           : titleCase(e.entryType))
       if (!code || legendMap.has(code)) continue
-      legendMap.set(code, {
-        code,
-        facultyName: e.faculty?.name ?? null,
-        facultyNo: e.faculty?.facultyNo ?? null,
-      })
+      legendMap.set(code, { code, facultyName: e.faculty?.name ?? null })
     }
     const legend = [...legendMap.values()]
       .filter((l) => l.facultyName)
       .sort((a, b) => a.code.localeCompare(b.code))
 
-    // The section's home room's own full week — every class that uses that
-    // room, from any section, not just this one. This is what makes it a
-    // "room timetable" rather than a relabelled copy of the section's own
-    // grid: a shared lab or a room double-booked across years shows up here.
-    // Read straight off TimetableEntry.roomId, same as the admin room view,
-    // so it can never drift out of sync with what was actually placed.
-    const roomTimetable = section.homeRoomId
-      ? await (async () => {
-          const roomEntries = await prisma.timetableEntry.findMany({
-            where: { versionId: live.id, roomId: section.homeRoomId },
-            include: {
-              subject: true,
-              faculty: true,
-              section: { include: { branch: true } },
-            },
-            orderBy: [{ dayOfWeek: "asc" }, { startPeriod: "asc" }],
-          })
-          return {
-            room: { id: section.homeRoom!.id, name: section.homeRoom!.name },
-            entries: roomEntries.map((e) => ({
-              id: e.id,
-              dayOfWeek: e.dayOfWeek,
-              startPeriod: e.startPeriod,
-              periodSpan: e.periodSpan,
-              entryType: e.entryType,
-              label: roomEntryLabel(e),
-              section: {
-                id: e.sectionId,
-                name: e.section.name,
-                year: e.section.year,
-                branchCode: e.section.branch.code,
-              },
-              subject: e.subject
-                ? { id: e.subject.id, code: e.subject.code, name: e.subject.name }
-                : null,
-              faculty: e.faculty
-                ? { id: e.faculty.id, name: e.faculty.name, facultyNo: e.faculty.facultyNo }
-                : null,
-            })),
-          }
-        })()
-      : null
-
+    // NOTE: this response used to carry a `roomTimetable` — the home room's
+    // own full week, rendered as a second grid below the section's. It was
+    // removed on 2026-08-22: the room a class runs in is now printed inside
+    // the timetable cell itself, so a second grid was saying the same thing
+    // twice. The room's own week still exists, on the admin Rooms page, which
+    // is where someone asking "what else uses this room?" is actually looking.
     res.json({
       term: { id: term.id, label: term.label },
       published: { label: live.label, publishedAt: live.publishedAt ?? null },
@@ -257,17 +215,11 @@ publicRouter.get(
           ? { id: e.subject.id, code: e.subject.code, name: e.subject.name }
           : null,
         faculty: e.faculty
-          ? {
-              id: e.faculty.id,
-              facultyNo: e.faculty.facultyNo,
-              name: e.faculty.name,
-              label: facultyLabel(e.faculty),
-            }
+          ? { id: e.faculty.id, name: e.faculty.name, label: facultyLabel(e.faculty) }
           : null,
         room: e.room ? { id: e.room.id, name: e.room.name } : null,
       })),
       legend,
-      roomTimetable,
     })
   })
 )
@@ -335,12 +287,7 @@ publicRouter.get(
               ? { id: e.subject.id, code: e.subject.code, name: e.subject.name }
               : null,
             faculty: e.faculty
-              ? {
-                  id: e.faculty.id,
-                  facultyNo: e.faculty.facultyNo,
-                  name: e.faculty.name,
-                  label: facultyLabel(e.faculty),
-                }
+              ? { id: e.faculty.id, name: e.faculty.name, label: facultyLabel(e.faculty) }
               : null,
             room: e.room ? { id: e.room.id, name: e.room.name } : null,
           })),
@@ -407,10 +354,12 @@ publicRouter.get(
         select: { facultyId: true, sectionId: true },
         distinct: ["facultyId", "sectionId"],
       }),
+      // Ordered by NAME, not facultyNo: the number isn't shown publicly any
+      // more, so ordering by it would look arbitrary to whoever is reading.
       prisma.faculty.findMany({
         where: { isActive: true },
         include: { department: true },
-        orderBy: { facultyNo: "asc" },
+        orderBy: { name: "asc" },
       }),
     ])
 
@@ -478,9 +427,8 @@ publicRouter.get(
       return {
         faculty: {
           id: f.id,
-          facultyNo: f.facultyNo,
           name: f.name,
-          label: `${f.facultyNo} — ${f.name}`,
+          label: f.name,
           departmentId: f.departmentId,
           departmentCode: f.department.code,
           departmentName: f.department.name,

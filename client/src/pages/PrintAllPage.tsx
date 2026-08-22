@@ -5,8 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Select } from "@/components/ui/select"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
+import { Link } from "react-router-dom"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
-import { RoomWeekGrid } from "@/components/timetable/RoomWeekGrid"
+import { ClassCell } from "@/components/timetable/ClassCell"
 import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -16,6 +17,9 @@ import type { PrintAllResponse, TimetableEntry } from "@/lib/types"
  * Every section's timetable on one page, each starting a new sheet when
  * printed. Saves the office printing eight pages one at a time — and
  * "Save as PDF" from here gives them the whole set as a single file.
+ *
+ * The faculty and room equivalents live at /admin/print/faculty and
+ * /admin/print/rooms; the links across the top go there.
  */
 export function PrintAllPage() {
   const [year, setYear] = React.useState<string>("")
@@ -43,7 +47,7 @@ export function PrintAllPage() {
             own page. Choose &ldquo;Save as PDF&rdquo; in the print dialog for a single file.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex items-end gap-2">
+        <CardContent className="flex flex-wrap items-end gap-2">
           <div>
             <Select value={year} onChange={(e) => setYear(e.target.value)} className="w-40">
               <option value="">All years</option>
@@ -55,7 +59,17 @@ export function PrintAllPage() {
             </Select>
           </div>
           <Button onClick={() => window.print()} disabled={withTimetables.length === 0}>
-            <Printer /> Print
+            <Printer /> Print all sections
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/admin/print/faculty">
+              <Printer /> All faculty
+            </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link to="/admin/print/rooms">
+              <Printer /> All rooms
+            </Link>
           </Button>
         </CardContent>
       </Card>
@@ -70,7 +84,7 @@ export function PrintAllPage() {
           </CardContent>
         </Card>
       ) : (
-        withTimetables.map(({ section, entries, legend, roomTimetable }, index) => (
+        withTimetables.map(({ section, entries, legend }, index) => (
           <section
             key={section.id}
             className={cn(
@@ -91,32 +105,26 @@ export function PrintAllPage() {
                 </p>
               </header>
 
+              {/* Subject, faculty and room all inside the cell — this sheet
+                  used to be followed by a whole second grid just to say which
+                  room each period was in. */}
               <TimetableTable<TimetableEntry>
                 slots={data.grid.slots}
                 workingDays={data.grid.workingDays}
                 entries={entries}
                 renderEntry={(entry, isFirstRun) => (
-                  <div
-                    className={cn(
-                      "w-full h-11 flex items-center justify-center px-1 text-xs font-semibold",
-                      entry.entryType === "LAB" && "bg-warning/15",
-                      !entry.subject && "text-muted-foreground"
-                    )}
-                  >
-                    {entry.subject
-                      ? entry.subject.code
-                      : entry.entryType === "COUNSELING"
-                        ? "COUN"
-                        : entry.entryType.slice(0, 3)}
-                    {entry.entryType === "LAB" && isFirstRun && (
-                      <span className="font-normal ml-1">LAB</span>
-                    )}
-                  </div>
+                  <ClassCell
+                    entryType={entry.entryType}
+                    isFirstRun={isFirstRun}
+                    primary={entry.subject?.code}
+                    faculty={entry.faculty?.name}
+                    room={entry.room?.name}
+                  />
                 )}
               />
 
               {legend.length > 0 && (
-                <div className="mt-4 grid gap-x-10 gap-y-1 sm:grid-cols-2 text-sm">
+                <div className="mt-3 pt-3 border-t grid gap-x-10 gap-y-1 sm:grid-cols-2 text-sm">
                   {legend.map((l) => (
                     <div key={l.subjectId} className="flex gap-2">
                       <span className="font-semibold min-w-16">{l.code}:</span>
@@ -124,14 +132,6 @@ export function PrintAllPage() {
                     </div>
                   ))}
                 </div>
-              )}
-
-              {roomTimetable && (
-                <RoomWeekGrid
-                  roomTimetable={roomTimetable}
-                  slots={data.grid.slots}
-                  workingDays={data.grid.workingDays}
-                />
               )}
             </PrintFitPage>
           </section>
@@ -145,7 +145,7 @@ function toRoman(year: number): string {
   return ["I", "II", "III", "IV"][year - 1] ?? String(year)
 }
 
-/** "FAC003 — Ms. Y. Sireesha", or just the name on older data. */
+/** "FAC003 — Ms. Y. Sireesha", or just the name on older data. Admin only. */
 function facultyLabel(l: { facultyName: string | null; facultyNo?: string | null }): string {
   if (!l.facultyName) return "\u2014"
   return l.facultyNo ? `${l.facultyNo} \u2014 ${l.facultyName}` : l.facultyName

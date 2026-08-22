@@ -234,13 +234,6 @@ overviewRouter.get(
       ])
     )
 
-    // Needed to label a room-timetable entry that belongs to a DIFFERENT
-    // section than the one being printed — `entries` here already spans the
-    // whole term (that's how faculty/room clashes across sections are
-    // caught), it's just missing branch/section display fields, which live
-    // on `sections` (already loaded once above).
-    const sectionsById = new Map(sections.map((s) => [s.id, s]))
-
     res.json({
       term: { id: term.id, label: term.label },
       version: { id: version.id, kind: version.kind, label: version.label },
@@ -250,50 +243,12 @@ overviewRouter.get(
         workingDays: cfg.workingDays,
         numPeriods: cfg.numPeriods,
       },
+      // NOTE: each section used to carry a `roomTimetable` — its home room's
+      // own full week, drawn as a second grid below the section sheet.
+      // Removed 2026-08-22: the room is now printed inside each cell, so the
+      // second grid was repeating itself. A room's own week is still printable
+      // in full from GET /print/rooms below.
       sections: wanted.map((section) => {
-        // The section's home room's own full week — every class using that
-        // room, from any section — not just this section's periods relabelled.
-        // Read straight off entries already loaded for the whole term, so a
-        // shared lab or a room double-booked across years shows up here too.
-        const roomTimetable = section.homeRoomId
-          ? {
-              room: { id: section.homeRoom!.id, name: section.homeRoom!.name },
-              entries: entries
-                .filter((e) => e.roomId === section.homeRoomId)
-                .map((e) => {
-                  const owner = sectionsById.get(e.sectionId)!
-                  return {
-                    id: e.id,
-                    dayOfWeek: e.dayOfWeek,
-                    startPeriod: e.startPeriod,
-                    periodSpan: e.periodSpan,
-                    entryType: e.entryType,
-                    label: roomEntryLabel({
-                      section: {
-                        year: owner.year,
-                        name: owner.name,
-                        branch: { code: owner.branch.code },
-                      },
-                      subject: e.subject,
-                      entryType: e.entryType,
-                    }),
-                    section: {
-                      id: owner.id,
-                      name: owner.name,
-                      year: owner.year,
-                      branchCode: owner.branch.code,
-                    },
-                    subject: e.subject
-                      ? { id: e.subject.id, code: e.subject.code, name: e.subject.name }
-                      : null,
-                    faculty: e.faculty
-                      ? { id: e.faculty.id, name: e.faculty.name, facultyNo: e.faculty.facultyNo }
-                      : null,
-                  }
-                }),
-            }
-          : null
-
         return {
           section: {
             id: section.id,
@@ -330,9 +285,181 @@ overviewRouter.get(
               }
             })
             .sort((a, b) => a.code.localeCompare(b.code)),
-          roomTimetable,
         }
       }),
+    })
+  })
+)
+
+/* --------------------- Print all faculty / all rooms ---------------------- */
+
+/**
+ * Every faculty member's week, in one response.
+ *
+ * Deliberately not "call /faculty/:id/timetable in a loop": fourteen faculty
+ * is fourteen round trips to a free-tier instance that may be asleep. Same
+ * rule as the two endpoints above — load the term once, then filter in memory.
+ *
+ * `?includeEmpty=1` keeps faculty with no classes; by default they're dropped,
+ * because a blank sheet per unassigned faculty member is wasted paper.
+ */
+overviewRouter.get(
+  "/print/faculty",
+  asyncHandler(async (req, res) => {
+    const includeEmpty = req.query.includeEmpty === "1"
+    const data = await loadTermData(versionSpecFromRequest(req))
+    if (!data) {
+      throw new AppError("No active academic term with daily timings.", 409)
+    }
+
+    const { term, version, sections, entries } = data
+    const cfg = term.timeConfig!
+
+    const faculty = await prisma.faculty.findMany({
+      where: { isActive: true },
+      include: { department: true },
+      orderBy: { facultyNo: "asc" },
+    })
+
+    const sectionsById = new Map(sections.map((s) => [s.id, s]))
+    const totalPeriods = cfg.workingDays.length * cfg.numPeriods
+
+    const rows = faculty
+      .map((f) => {
+        const mine = entries
+          .filter((e) => e.facultyId === f.id)
+          .sort(
+            (a, b) =>
+              a.dayOfWeek.localeCompare(b.dayOfWeek) || a.startPeriod - b.startPeriod
+          )
+        const taught = mine.reduce((n, e) => n + e.periodSpan, 0)
+
+        return {
+          faculty: {
+            id: f.id,
+            facultyNo: f.facultyNo,
+            name: f.name,
+            departmentCode: f.department.code,
+          },
+          // Same entry shape the single-faculty page renders, so one cell
+          // component covers both.
+          entries: mine.map((e) => {
+            const owner = sectionsById.get(e.sectionId)!
+            return {
+              id: e.id,
+              dayOfWeek: e.dayOfWeek,
+              startPeriod: e.startPeriod,
+              periodSpan: e.periodSpan,
+              entryType: e.entryType,
+              subject: e.subject,
+              room: e.room,
+              section: {
+                id: owner.id,
+                name: owner.name,
+                year: owner.year,
+                branchCode: owner.branch.code,
+                departmentCode: owner.branch.department.code,
+              },
+            }
+          }),
+          summary: { weeklyPeriods: taught, freePeriods: totalPeriods - taught },
+        }
+      })
+      .filter((r) => includeEmpty || r.entries.length > 0)
+
+    res.json({
+      term: { id: term.id, label: term.label },
+      version: { id: version.id, kind: version.kind, label: version.label },
+      grid: {
+        slots: buildDayGrid(cfg),
+        endTime: dayEndTime(cfg),
+        workingDays: cfg.workingDays,
+        numPeriods: cfg.numPeriods,
+      },
+      faculty: rows,
+    })
+  })
+)
+
+/**
+ * Every room's week, in one response — the room-side twin of the endpoint
+ * above. Rooms with nothing timetabled in them are dropped unless
+ * `?includeEmpty=1`.
+ *
+ * The cell label is the same YEAR_BRANCH_SECTION_SUBJECT shorthand the admin
+ * Room Timetable page uses, so a printed room sheet reads identically to the
+ * screen it came from.
+ */
+overviewRouter.get(
+  "/print/rooms",
+  asyncHandler(async (req, res) => {
+    const includeEmpty = req.query.includeEmpty === "1"
+    const data = await loadTermData(versionSpecFromRequest(req))
+    if (!data) {
+      throw new AppError("No active academic term with daily timings.", 409)
+    }
+
+    const { term, version, sections, entries } = data
+    const cfg = term.timeConfig!
+
+    const rooms = await prisma.room.findMany({
+      orderBy: [{ block: "asc" }, { floor: "asc" }, { name: "asc" }],
+    })
+    const sectionsById = new Map(sections.map((s) => [s.id, s]))
+
+    const rows = rooms
+      .map((room) => ({
+        room,
+        entries: entries
+          .filter((e) => e.roomId === room.id)
+          .sort(
+            (a, b) =>
+              a.dayOfWeek.localeCompare(b.dayOfWeek) || a.startPeriod - b.startPeriod
+          )
+          .map((e) => {
+            const owner = sectionsById.get(e.sectionId)!
+            return {
+              id: e.id,
+              dayOfWeek: e.dayOfWeek,
+              startPeriod: e.startPeriod,
+              periodSpan: e.periodSpan,
+              entryType: e.entryType,
+              label: roomEntryLabel({
+                section: {
+                  year: owner.year,
+                  name: owner.name,
+                  branch: { code: owner.branch.code },
+                },
+                subject: e.subject,
+                entryType: e.entryType,
+              }),
+              section: {
+                id: owner.id,
+                name: owner.name,
+                year: owner.year,
+                branchCode: owner.branch.code,
+              },
+              subject: e.subject
+                ? { id: e.subject.id, code: e.subject.code, name: e.subject.name }
+                : null,
+              faculty: e.faculty
+                ? { id: e.faculty.id, name: e.faculty.name, facultyNo: e.faculty.facultyNo }
+                : null,
+            }
+          }),
+      }))
+      .filter((r) => includeEmpty || r.entries.length > 0)
+
+    res.json({
+      term: { id: term.id, label: term.label },
+      version: { id: version.id, kind: version.kind, label: version.label },
+      grid: {
+        slots: buildDayGrid(cfg),
+        endTime: dayEndTime(cfg),
+        workingDays: cfg.workingDays,
+        numPeriods: cfg.numPeriods,
+      },
+      rooms: rows,
     })
   })
 )

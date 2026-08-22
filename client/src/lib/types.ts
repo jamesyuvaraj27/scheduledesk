@@ -339,7 +339,38 @@ export interface PrintAllResponse {
     }
     entries: TimetableEntry[]
     legend: LegendRow[]
-    roomTimetable: SectionHomeRoomTimetable | null
+  }[]
+}
+
+/* --------------------------- Bulk print (faculty / rooms) ----------------- */
+
+/**
+ * Every faculty member's week in one response, for "Print all faculty
+ * timetables". Same entry shape the single-faculty page uses, so one cell
+ * component renders both.
+ */
+export interface PrintAllFacultyResponse {
+  term: { id: string; label: string }
+  grid: TimetableGrid
+  faculty: {
+    faculty: {
+      id: string
+      facultyNo: string
+      name: string
+      departmentCode: string
+    }
+    entries: FacultyTimetable["entries"]
+    summary: { weeklyPeriods: number; freePeriods: number }
+  }[]
+}
+
+/** Every room's week in one response, for "Print all room timetables". */
+export interface PrintAllRoomsResponse {
+  term: { id: string; label: string }
+  grid: TimetableGrid
+  rooms: {
+    room: Room
+    entries: RoomTimetableEntry[]
   }[]
 }
 
@@ -368,17 +399,13 @@ export interface RoomTimetable {
   entries: RoomTimetableEntry[]
 }
 
-/**
- * A room's own week, scoped down to the section that's being viewed/printed
- * (the section's home room). Shares `RoomTimetableEntry` with the full admin
- * Room Timetable page — same shape, just pre-filtered to one room server-side
- * and attached alongside a section or print-all response instead of fetched
- * separately.
+/*
+ * `SectionHomeRoomTimetable` used to live here — the home room's own week,
+ * attached to the public section timetable and to /print/sections so both
+ * could draw a second grid underneath the first. Removed 2026-08-22: the room
+ * is now printed inside each timetable cell, and the room's own week belongs
+ * to the Rooms section alone (`RoomTimetable` above).
  */
-export interface SectionHomeRoomTimetable {
-  room: { id: string; name: string }
-  entries: RoomTimetableEntry[]
-}
 
 /** A class that could take a given room on a given day/period. */
 export interface AllocatableOption {
@@ -427,11 +454,28 @@ export interface VersionState {
 
 /* ------------------------------ Public views ----------------------------- */
 
+/**
+ * A faculty member as the public side is allowed to see them: name only.
+ *
+ * `facultyNo` is deliberately absent — the college's own numbering is admin
+ * information and `server/src/routes/public.ts` strips it from every response,
+ * so there is nothing to type here. `id` is an opaque cuid the Class
+ * Adjustment page uses as a select value; it is never rendered.
+ */
 export interface PublicFacultyRef {
   id: string
-  facultyNo: string
   name: string
   label: string
+}
+
+/**
+ * The subject -> faculty key printed under a public grid. Keyed by subject
+ * CODE (not id — the public route builds it from what's actually placed, so
+ * activities like Library appear too) and carries no faculty number.
+ */
+export interface PublicLegendRow {
+  code: string
+  facultyName: string | null
 }
 
 export interface PublicSectionRef {
@@ -477,9 +521,7 @@ export interface PublicSectionTimetable {
   grid: TimetableGrid
   entries: PublicTimetableEntry[]
   /** Subject code -> faculty, printed under the grid. */
-  legend: LegendRow[]
-  /** The section's home room's own full week, or null with no home room set. */
-  roomTimetable: SectionHomeRoomTimetable | null
+  legend: PublicLegendRow[]
 }
 
 /* --------------------------- Day-wise report ------------------------------ */

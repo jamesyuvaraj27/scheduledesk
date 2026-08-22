@@ -85,6 +85,16 @@
   body {
     @apply bg-background text-foreground;
   }
+  html,
+  body {
+    /* The page itself must never scroll sideways on a phone. Wide content —
+       timetable grids, master-data tables — scrolls inside its own
+       `overflow-x-auto` box instead. `clip` rather than `hidden` because
+       `hidden` would make this a scroll container and break `position:
+       sticky` for anything inside it. */
+    max-width: 100%;
+    overflow-x: clip;
+  }
 }
 
 /* ---------------------------------------------------------------------------

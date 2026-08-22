@@ -1,5 +1,6 @@
-import { NavLink, Outlet, Link, useNavigate } from "react-router-dom"
-import { LogOut, Radio, CopyPlus, Eye } from "lucide-react"
+import * as React from "react"
+import { NavLink, Outlet, Link, useNavigate, useLocation } from "react-router-dom"
+import { LogOut, Radio, CopyPlus, Eye, Menu, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -18,32 +19,48 @@ const navItems = [
   { to: "/admin/reset", label: "Reset Year" },
 ]
 
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    "text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap",
+    isActive && "text-foreground font-medium"
+  )
+
 export function AppLayout() {
   const { logout } = useAdminAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const [menuOpen, setMenuOpen] = React.useState(false)
+
+  // Nine links don't fit a phone. They used to sit in a horizontally
+  // scrolling strip, which hid most of them behind a gesture nobody knows is
+  // there; below `lg` they now collapse into a proper menu.
+  React.useEffect(() => setMenuOpen(false), [location.pathname])
 
   return (
     <div className="min-h-svh flex flex-col">
-      <header className="border-b">
-        <div className="mx-auto max-w-6xl flex items-center gap-6 px-4 h-14">
+      <header className="border-b print:hidden">
+        <div className="mx-auto max-w-6xl flex items-center gap-4 px-4 h-14">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="lg:hidden -ml-2"
+            aria-label={menuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((v) => !v)}
+          >
+            {menuOpen ? <X /> : <Menu />}
+          </Button>
+
           <span className="font-semibold shrink-0">ScheduleDesk</span>
-          <nav className="flex gap-4 text-sm overflow-x-auto">
+
+          <nav className="hidden lg:flex gap-4 text-sm">
             {navItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  cn(
-                    "text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap",
-                    isActive && "text-foreground font-medium"
-                  )
-                }
-              >
+              <NavLink key={item.to} to={item.to} end={item.end} className={linkClass}>
                 {item.label}
               </NavLink>
             ))}
           </nav>
+
           <div className="ml-auto flex items-center gap-3 shrink-0">
             <Link
               to="/"
@@ -60,15 +77,47 @@ export function AppLayout() {
                 navigate("/")
               }}
             >
-              <LogOut /> Sign out
+              <LogOut />
+              <span className="hidden sm:inline">Sign out</span>
             </Button>
           </div>
         </div>
+
+        {menuOpen && (
+          <nav className="lg:hidden border-t bg-background">
+            <div className="mx-auto max-w-6xl px-4 py-2 grid gap-0.5 text-sm">
+              {navItems.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    cn(
+                      "rounded-md px-2 py-2 hover:bg-muted/60 transition-colors",
+                      isActive ? "bg-muted font-medium" : "text-muted-foreground"
+                    )
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+              <Link
+                to="/"
+                className="rounded-md px-2 py-2 text-muted-foreground hover:bg-muted/60 flex items-center gap-1.5 sm:hidden"
+              >
+                <Eye className="size-3.5" /> Public view
+              </Link>
+            </div>
+          </nav>
+        )}
       </header>
 
       <VersionBanner />
 
-      <main className="flex-1 mx-auto w-full max-w-6xl px-4 py-6">
+      {/* `min-w-0` stops a wide grid inside from stretching the flex column
+          and giving the whole page a horizontal scrollbar — the grid has its
+          own scroll container. */}
+      <main className="flex-1 mx-auto w-full min-w-0 max-w-6xl px-3 sm:px-4 py-5 sm:py-6">
         <Outlet />
       </main>
     </div>
@@ -90,7 +139,7 @@ function VersionBanner() {
   return (
     <div
       className={cn(
-        "border-b text-sm",
+        "border-b text-sm print:hidden",
         onWorking ? "bg-warning/10 border-warning/30" : "bg-success/10 border-success/30"
       )}
     >

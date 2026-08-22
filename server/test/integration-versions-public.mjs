@@ -184,7 +184,10 @@ try {
   ok("public view shows the LIVE timetable only (1 class)", pubTt.body.entries.length === 1, `${pubTt.body.entries.length} entries`)
   const shown = pubTt.body.entries[0]
   ok("public view shows subject, faculty and room", Boolean(shown.subject?.code && shown.faculty?.name && shown.room?.name))
-  ok("public view labels faculty with their number", shown.faculty.label === `${shown.faculty.facultyNo} — ${shown.faculty.name}`, shown.faculty.label)
+  // Changed 2026-08-22: faculty numbers are admin-only. This used to assert
+  // the opposite — that the public label was "FAC001 — Name".
+  ok("public view labels faculty by NAME only", shown.faculty.label === shown.faculty.name, shown.faculty.label)
+  ok("public view does not expose facultyNo", shown.faculty.facultyNo === undefined, String(shown.faculty.facultyNo))
 
   /* ------------------------------------------------------------------ */
   /* TEST 5 — admin security at the API level                            */
@@ -222,20 +225,35 @@ try {
 
   console.log("\n— Test 3: class adjustment —")
 
-  const adj = await anon("GET", `/public/adjustment?sectionId=${section.id}&dayOfWeek=MON&startPeriod=1`)
+  /*
+   * Rewritten 2026-08-22. This block still asserted the ORIGINAL adjustment
+   * API — `selectedClass`, `availableFaculty`, per-slot `isTarget` and
+   * `label: "FREE"` — all of which were replaced on 2026-08-21 when the page
+   * was reworked to day -> faculty -> hour with tiered candidates. The
+   * endpoint now returns every active faculty member's whole day and lets the
+   * client derive the class and the candidate tiers from it, so the checks
+   * below test that shape instead. These two failures predate this session's
+   * work; they are not caused by the faculty-visibility change.
+   */
+  const adj = await anon("GET", `/public/adjustment?dayOfWeek=MON`)
   ok("class adjustment needs no login", adj.status === 200, `HTTP ${adj.status}`)
-  ok("identifies the class that needs covering", adj.body.selectedClass?.subject?.code === "ZVCN", adj.body.selectedClass?.subject?.code)
-  ok("names the regular faculty with their number", adj.body.selectedClass?.regularFaculty?.facultyNo === "ZVF001")
+  ok("it says out loud that it changes nothing", adj.body.readOnly === true)
+  ok("it answers for the day that was asked for", adj.body.query?.dayOfWeek === "MON")
+  ok("it returns every active faculty member", Array.isArray(adj.body.faculty) && adj.body.faculty.length >= 2, `${adj.body.faculty?.length}`)
 
-  const busyOne = adj.body.availableFaculty.some((c) => c.faculty.id === one.body.id)
-  ok("the teaching faculty is NOT listed as free", busyOne === false)
+  const rowOne = adj.body.faculty.find((r) => r.faculty.id === one.body.id)
+  const rowTwo = adj.body.faculty.find((r) => r.faculty.id === two.body.id)
+  ok("the teaching faculty member is in the list", Boolean(rowOne))
+  ok("each faculty member comes with their whole day", (rowOne?.day.length ?? 0) > 0, `${rowOne?.day.length} rows`)
 
-  const freeTwo = adj.body.availableFaculty.find((c) => c.faculty.id === two.body.id)
-  ok("a faculty member with no class that hour IS listed as free", Boolean(freeTwo))
-  ok("each free faculty comes with their whole day", (freeTwo?.day.length ?? 0) > 0, `${freeTwo?.day.length} rows`)
-  const target = freeTwo?.day.find((s) => s.isTarget)
-  ok("the target period is flagged for highlighting", target?.period === 1 && target?.busy === false)
-  ok("free periods are labelled FREE", target?.label === "FREE", target?.label)
+  const p1One = rowOne?.day.find((s) => s.period === 1)
+  ok("the faculty member teaching period 1 is shown as busy", p1One?.busy === true)
+  ok("and the class they're taking is named", p1One?.detail?.subjectCode === "ZVCN", p1One?.detail?.subjectCode)
+  ok("their day counts one period taught", rowOne?.periodsTaughtToday === 1, `${rowOne?.periodsTaughtToday}`)
+
+  const p1Two = rowTwo?.day.find((s) => s.period === 1)
+  ok("a faculty member with no class that hour is free", p1Two?.busy === false)
+  ok("faculty are named, never numbered", rowOne?.faculty.label === rowOne?.faculty.name, rowOne?.faculty.label)
 
   const stateAfterAdj = await j("GET", "/timetable-versions")
   ok(
@@ -243,9 +261,14 @@ try {
     stateAfterAdj.body.live.entryCount === 1 && stateAfterAdj.body.working.entryCount === 2
   )
 
-  // The working copy must not leak into the public adjustment view.
-  const adjTue = await anon("GET", `/public/adjustment?sectionId=${section.id}&dayOfWeek=TUE&startPeriod=1`)
-  ok("adjustment reads LIVE, not the working copy", adjTue.body.selectedClass === null)
+  // The working copy must not leak into the public adjustment view: the extra
+  // TUE class exists only on WORKING, so nobody is busy on Tuesday.
+  const adjTue = await anon("GET", `/public/adjustment?dayOfWeek=TUE`)
+  ok(
+    "adjustment reads LIVE, not the working copy",
+    adjTue.body.faculty.every((r) => r.periodsTaughtToday === 0),
+    JSON.stringify(adjTue.body.faculty.map((r) => r.periodsTaughtToday))
+  )
 
   /* ------------------------------------------------------------------ */
   /* TEST 2 — publish                                                    */

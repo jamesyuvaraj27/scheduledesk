@@ -1,11 +1,14 @@
 import * as React from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Archive, ArrowRight, Check, RotateCcw, Trash2, TriangleAlert } from "lucide-react"
+import {
+  Archive, ArrowRight, Check, RotateCcw, ShieldAlert, Trash2, TriangleAlert,
+} from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Dialog } from "@/components/ui/dialog"
 import { ErrorState, LoadingState } from "@/components/ui/feedback"
 import { api } from "@/lib/api"
 import type { AcademicTerm } from "@/lib/types"
@@ -334,7 +337,230 @@ export function ResetYearPage() {
           </p>
         </CardContent>
       </Card>
+
+      <DangerZone onDone={invalidateEverything} />
     </div>
+  )
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                 Danger zone                                */
+/* -------------------------------------------------------------------------- */
+
+interface DeleteAllPreview {
+  confirmPhrase: string
+  counts: Record<string, number>
+  total: number
+}
+
+const COUNT_LABELS: Record<string, string> = {
+  departments: "Departments",
+  branches: "Branches",
+  sections: "Sections",
+  rooms: "Rooms",
+  faculty: "Faculty",
+  subjects: "Subjects",
+  terms: "Academic terms",
+  timeConfigs: "Daily timings",
+  sectionSubjects: "Curriculum rows",
+  sectionAssignments: "Faculty assignments",
+  facultySubjects: "Eligibility links",
+  timetableVersions: "Timetable versions",
+  timetableEntries: "Placed classes",
+}
+
+/**
+ * Delete All Data.
+ *
+ * Kept behind a disclosure, below everything else, and visually separated —
+ * it is not part of the normal end-of-year flow and shouldn't sit next to a
+ * button people press every June. Rolling the year is the answer almost every
+ * time; this is for handing the installation to someone else.
+ */
+function DangerZone({ onDone }: { onDone: () => void }) {
+  const [expanded, setExpanded] = React.useState(false)
+  const [dialogOpen, setDialogOpen] = React.useState(false)
+  const [password, setPassword] = React.useState("")
+  const [confirmText, setConfirmText] = React.useState("")
+  const [wiped, setWiped] = React.useState(false)
+
+  const preview = useQuery({
+    queryKey: ["delete-all-preview"],
+    queryFn: () => api.get<DeleteAllPreview>("/terms/delete-all-preview"),
+    enabled: expanded,
+  })
+
+  const deleteAll = useMutation({
+    mutationFn: () => api.post("/terms/delete-all", { password, confirmText }),
+    onSuccess: () => {
+      setWiped(true)
+      setDialogOpen(false)
+      setPassword("")
+      setConfirmText("")
+      onDone()
+    },
+  })
+
+  const phrase = preview.data?.confirmPhrase ?? "DELETE ALL DATA"
+  // Case-sensitive and exact, matching the server. Deliberately not trimmed
+  // to lowercase — this is the last thing standing between a click and an
+  // empty database.
+  const canDelete = password.length > 0 && confirmText === phrase
+
+  const close = () => {
+    if (deleteAll.isPending) return
+    setDialogOpen(false)
+    setPassword("")
+    setConfirmText("")
+    deleteAll.reset()
+  }
+
+  return (
+    <Card className="border-destructive/40">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2 text-destructive">
+          <ShieldAlert className="size-4" /> Danger zone
+        </CardTitle>
+        <CardDescription>
+          Permanently empty the database. Rolling the academic year above does what
+          you almost certainly want instead — it keeps your master data and your
+          history.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {wiped && (
+          <div className="rounded-lg border border-success/40 bg-success/5 p-3 text-sm">
+            <p className="font-medium">Everything has been deleted.</p>
+            <p className="text-muted-foreground mt-1">
+              The database is empty. Start again from Master Data.
+            </p>
+          </div>
+        )}
+
+        {!expanded ? (
+          <Button variant="outline" size="sm" onClick={() => setExpanded(true)}>
+            Show delete options
+          </Button>
+        ) : (
+          <>
+            <div className="rounded-lg border p-3 text-sm">
+              <p className="font-medium mb-2">This would permanently delete:</p>
+              {preview.isLoading ? (
+                <LoadingState />
+              ) : preview.error ? (
+                <ErrorState error={preview.error} />
+              ) : preview.data ? (
+                <>
+                  <dl className="grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
+                    {Object.entries(preview.data.counts).map(([key, value]) => (
+                      <div key={key} className="flex justify-between gap-2">
+                        <dt className="text-muted-foreground truncate">
+                          {COUNT_LABELS[key] ?? key}
+                        </dt>
+                        <dd className="font-medium tabular-nums shrink-0">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="text-xs text-muted-foreground mt-3 pt-3 border-t">
+                    {preview.data.total} rows in total. There is no undo and no
+                    archive — take a database backup first if any of this matters.
+                  </p>
+                </>
+              ) : null}
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={preview.data?.total === 0}
+                onClick={() => setDialogOpen(true)}
+              >
+                <Trash2 /> Delete all data
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setExpanded(false)}>
+                Hide
+              </Button>
+            </div>
+            {preview.data?.total === 0 && (
+              <p className="text-xs text-muted-foreground">
+                The database is already empty.
+              </p>
+            )}
+          </>
+        )}
+      </CardContent>
+
+      <Dialog
+        open={dialogOpen}
+        onClose={close}
+        title="Delete all data"
+        description="This empties every table. It cannot be undone."
+      >
+        <div className="space-y-4">
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
+            {preview.data
+              ? `${preview.data.total} rows across ${
+                  Object.keys(preview.data.counts).length
+                } tables will be deleted, including ${
+                  preview.data.counts.timetableEntries ?? 0
+                } placed classes and all ${preview.data.counts.faculty ?? 0} faculty records.`
+              : "Every department, branch, section, room, subject, faculty member, term and timetable will be deleted."}
+          </div>
+
+          <div>
+            <Label htmlFor="danger-password">Admin password</Label>
+            <Input
+              id="danger-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Your admin password"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="danger-confirm">
+              Type <span className="font-mono font-semibold">{phrase}</span> to confirm
+            </Label>
+            <Input
+              id="danger-confirm"
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder={phrase}
+              // Phones helpfully capitalise and autocorrect. Both would make
+              // an exact-match phrase impossible to type.
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            {confirmText.length > 0 && confirmText !== phrase && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Must match exactly, in capitals.
+              </p>
+            )}
+          </div>
+
+          {deleteAll.error ? <ErrorState error={deleteAll.error} /> : null}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button variant="ghost" size="sm" onClick={close} disabled={deleteAll.isPending}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={!canDelete || deleteAll.isPending}
+              onClick={() => deleteAll.mutate()}
+            >
+              <Trash2 />
+              {deleteAll.isPending ? "Deleting…" : "Delete everything"}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </Card>
   )
 }
 

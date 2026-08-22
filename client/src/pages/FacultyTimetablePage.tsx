@@ -8,9 +8,9 @@ import { Badge } from "@/components/ui/badge"
 import { Select } from "@/components/ui/select"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
+import { ClassCell } from "@/components/timetable/ClassCell"
 import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
-import { cn } from "@/lib/utils"
 import type { Faculty, FacultyTimetable } from "@/lib/types"
 
 type Entry = FacultyTimetable["entries"][number]
@@ -83,6 +83,11 @@ export function FacultyTimetablePage() {
           <Button size="sm" onClick={() => window.print()}>
             <Printer /> Print
           </Button>
+          <Button asChild size="sm" variant="outline">
+            <Link to="/admin/print/faculty">
+              <Printer /> Print all
+            </Link>
+          </Button>
         </div>
       </div>
 
@@ -135,29 +140,21 @@ function FacultyGrid({ data }: { data: FacultyTimetable }) {
               workingDays={grid.workingDays}
               entries={entries}
               renderEntry={(entry, isFirstRun) => (
-                <div
-                  className={cn(
-                    "w-full h-11 flex flex-col items-center justify-center leading-tight px-1",
-                    entry.entryType === "LAB" ? "bg-warning/15" : "bg-primary/10"
-                  )}
+                <ClassCell
+                  entryType={entry.entryType}
+                  isFirstRun={isFirstRun}
+                  primary={entry.subject?.code}
+                  // The second line is the class they're teaching, not their
+                  // own name — this whole sheet is about one person already.
+                  secondary={`${entry.section.branchCode}-${entry.section.name} · ${toRoman(
+                    entry.section.year
+                  )}`}
+                  room={entry.room?.name}
                   title={`${entry.subject?.name ?? entry.entryType} · ${entry.section.branchCode}-${entry.section.name}`}
-                >
-                  <span className="text-xs font-semibold">
-                    {entry.subject?.code ?? entry.entryType.slice(0, 3)}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {entry.section.branchCode}-{entry.section.name} ·{" "}
-                    {toRoman(entry.section.year)}
-                  </span>
-                  {isFirstRun && entry.room && (
-                    <span className="text-[9px] text-muted-foreground">
-                      {entry.room.name}
-                    </span>
-                  )}
-                </div>
+                />
               )}
               renderEmpty={() => (
-                <div className="w-full h-11 flex items-center justify-center text-[10px] text-muted-foreground/50">
+                <div className="w-full h-full min-h-[3.5rem] flex items-center justify-center text-[10px] text-muted-foreground/50">
                   free
                 </div>
               )}

@@ -8,13 +8,13 @@ import { Label } from "@/components/ui/label"
 import { Select } from "@/components/ui/select"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
-import { RoomWeekGrid } from "@/components/timetable/RoomWeekGrid"
+import { ClassCell } from "@/components/timetable/ClassCell"
+import { activityLabel, SESSION_LABEL } from "@/components/timetable/entryStyles"
 import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
-import { cn } from "@/lib/utils"
 import type {
   Day,
-  LegendRow,
+  PublicLegendRow,
   PublicMeta,
   PublicSectionTimetable,
   PublicTimetableEntry,
@@ -32,6 +32,10 @@ import type {
  *
  * The filters live in the URL, so a section's timetable can be bookmarked or
  * put behind a noticeboard QR code.
+ *
+ * Nothing here shows a faculty number or any other internal identifier — the
+ * public API doesn't send them, so there is nothing to leak. Faculty appear
+ * by name only.
  */
 
 /** Stable reference, so the memo below doesn't invalidate every render. */
@@ -180,7 +184,7 @@ export function StudentTimetablePage() {
 /* -------------------------------------------------------------------------- */
 
 function WeekGrid({ data }: { data: PublicSectionTimetable }) {
-  const { section, grid, entries, legend, term, roomTimetable } = data
+  const { section, grid, entries, legend, term } = data
 
   return (
     <PrintFitPage className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
@@ -203,21 +207,38 @@ function WeekGrid({ data }: { data: PublicSectionTimetable }) {
         />
       ) : (
         <>
+          {/* One grid, and everything is in it. The room used to be a second
+              grid underneath; it's now the third line of each cell, which is
+              where someone reading a period actually wants it. */}
           <TimetableTable<PublicTimetableEntry>
             slots={grid.slots}
             workingDays={grid.workingDays}
             entries={entries}
             renderEntry={(entry, isFirstRun) => (
               <ClassCell
-                entry={entry}
+                entryType={entry.entryType}
                 isFirstRun={isFirstRun}
-                homeRoom={section.homeRoom}
+                primary={entry.subject?.code}
+                faculty={entry.faculty?.name}
+                room={entry.room?.name}
+                title={[
+                  entry.subject?.name ?? SESSION_LABEL[entry.entryType],
+                  entry.faculty?.name,
+                  entry.room?.name,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               />
+            )}
+            renderEmpty={() => (
+              <div className="w-full h-full min-h-[3.5rem] flex items-center justify-center text-[10px] text-muted-foreground/50">
+                free
+              </div>
             )}
           />
 
           {legend.length > 0 && (
-            <div className="mt-4 pt-4 border-t grid gap-x-10 gap-y-1 sm:grid-cols-2 text-sm">
+            <div className="mt-3 pt-3 border-t grid gap-x-10 gap-y-1 sm:grid-cols-2 text-sm">
               {legend.map((l) => (
                 <div key={l.code} className="flex gap-2">
                   <span className="font-semibold min-w-24">{l.code}:</span>
@@ -227,60 +248,14 @@ function WeekGrid({ data }: { data: PublicSectionTimetable }) {
             </div>
           )}
 
-          {roomTimetable && (
-            <RoomWeekGrid
-              roomTimetable={roomTimetable}
-              slots={grid.slots}
-              workingDays={grid.workingDays}
-            />
-          )}
-
           <p className="text-xs text-muted-foreground mt-3 print:hidden">
-            Scroll the grid sideways on a narrow screen, or pick a single day
-            above for a list that fits.
+            Cells show the subject, who takes it and the room. Scroll the grid
+            sideways on a narrow screen, or pick a single day above for a list
+            that fits.
           </p>
         </>
       )}
     </PrintFitPage>
-  )
-}
-
-/**
- * One cell of the grid. Labs are shaded, and a room is printed underneath only
- * when the class isn't in the section's own classroom — the only time it tells
- * you something you didn't already know.
- */
-function ClassCell({
-  entry,
-  isFirstRun,
-  homeRoom,
-}: {
-  entry: PublicTimetableEntry
-  isFirstRun: boolean
-  homeRoom: string | null
-}) {
-  const elsewhere = entry.room && entry.room.name !== homeRoom
-
-  return (
-    <div
-      className={cn(
-        "relative w-full h-11 flex items-center justify-center px-1 text-xs font-semibold",
-        entry.entryType === "LAB" ? "bg-warning/15" : "bg-muted/40"
-      )}
-    >
-      <span>
-        {entry.subject ? entry.subject.code : activityLabel(entry.entryType)}
-        {entry.entryType === "LAB" && isFirstRun && (
-          <span className="font-normal ml-1">LAB</span>
-        )}
-      </span>
-
-      {isFirstRun && elsewhere && (
-        <span className="absolute left-1 bottom-0.5 text-[10px] font-normal text-muted-foreground">
-          {entry.room!.name}
-        </span>
-      )}
-    </div>
   )
 }
 
@@ -326,7 +301,7 @@ function SingleDay({
             {grid.slots.map((slot, i) => {
               if (slot.kind !== "PERIOD" || slot.period === null) {
                 return (
-                  <tr key={i} className="bg-muted/30 text-muted-foreground">
+                  <tr key={i} className="bg-muted/40">
                     <td className="px-3 py-2 align-top text-xs tabular-nums">
                       {slot.startTime}
                       <span className="block">{slot.endTime}</span>
@@ -342,8 +317,8 @@ function SingleDay({
               const continued = entry && entry.startPeriod !== slot.period
 
               return (
-                <tr key={i} className={cn(entry?.entryType === "LAB" && "bg-warning/10")}>
-                  <td className="px-3 py-2 align-top text-xs tabular-nums text-muted-foreground">
+                <tr key={i}>
+                  <td className="px-3 py-2 align-top text-xs tabular-nums opacity-70">
                     {slot.startTime}
                     <span className="block">{slot.endTime}</span>
                   </td>
@@ -366,12 +341,10 @@ function SingleDay({
                           )}
                         </div>
                         {entry.subject && (
-                          <div className="text-xs text-muted-foreground">
-                            {entry.subject.name}
-                          </div>
+                          <div className="text-xs opacity-80">{entry.subject.name}</div>
                         )}
-                        <div className="text-xs text-muted-foreground mt-0.5">
-                          {entry.faculty?.label ?? "Faculty not assigned"}
+                        <div className="text-xs opacity-80 mt-0.5">
+                          {entry.faculty?.name ?? "Faculty not assigned"}
                           {entry.room ? ` · ${entry.room.name}` : ""}
                         </div>
                       </>
@@ -389,16 +362,14 @@ function SingleDay({
 
 /* --------------------------------- helpers -------------------------------- */
 
-function activityLabel(type: string): string {
-  return type === "COUNSELING" ? "COUNSELLING" : type
-}
-
 function toRoman(year: number): string {
   return ["I", "II", "III", "IV"][year - 1] ?? String(year)
 }
 
-/** "FAC003 — Ms. Y. Sireesha", or just the name on older data. */
-function facultyLabel(l: LegendRow): string {
-  if (!l.facultyName) return "—"
-  return l.facultyNo ? `${l.facultyNo} — ${l.facultyName}` : l.facultyName
+/**
+ * Faculty are named publicly, never numbered. The API doesn't send
+ * `facultyNo` at all, so there is nothing here to accidentally print.
+ */
+function facultyLabel(l: PublicLegendRow): string {
+  return l.facultyName ?? "—"
 }

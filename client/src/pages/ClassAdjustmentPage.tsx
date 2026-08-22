@@ -97,9 +97,12 @@ export function ClassAdjustmentPage() {
       (f) => !sameSectionIds.has(f.faculty.id) && !departmentIds.has(f.faculty.id)
     )
 
+    // Tie-break by NAME, not faculty number: the number is admin-only and the
+    // public API no longer sends it, so ordering by it would be invisible to
+    // whoever is reading this list.
     const byWorkload = (a: AdjustmentFacultyRow, b: AdjustmentFacultyRow) =>
       a.periodsTaughtToday - b.periodsTaughtToday ||
-      a.faculty.facultyNo.localeCompare(b.faculty.facultyNo)
+      a.faculty.name.localeCompare(b.faculty.name)
 
     return {
       detail,
