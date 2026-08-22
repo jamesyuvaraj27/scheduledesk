@@ -116,11 +116,15 @@
     display: none !important;
   }
 
-  /* Strip the app chrome down to the sheet itself. */
-  header:not(.print-keep),
-  nav {
-    display: none !important;
-  }
+  /* There is deliberately no blanket `header, nav { display: none }` rule
+     here. That used to exist to strip the app's own nav chrome at print
+     time, but it hid every <header> tag on the page indiscriminately —
+     including each timetable's own title block (branch/section/room/year),
+     which also happens to be a <header> element and was silently vanishing
+     from every printed sheet as a result. Each layout's own chrome header
+     now carries `print:hidden` directly (see AppLayout.tsx and
+     PublicLayout.tsx) so it self-hides without reaching for every other
+     <header> on the page too. */
 
   body {
     background: #fff;

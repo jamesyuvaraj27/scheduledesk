@@ -19,7 +19,7 @@ export function PublicLayout() {
 
   return (
     <div className="min-h-svh flex flex-col">
-      <header className="border-b bg-background">
+      <header className="border-b bg-background print:hidden">
         <div className="mx-auto max-w-6xl flex items-center gap-4 px-4 h-14">
           <Link to="/" className="font-semibold shrink-0">
             ScheduleDesk
