@@ -163,7 +163,20 @@ export function CrudSection<T extends { id: string }>({
       </CardContent>
 
       <Dialog open={open} onClose={close} title={formTitle(editing)}>
-        {renderForm(editing, close)}
+        {/* The dialog's own children never unmount when it closes — only its
+            native <dialog> visibility toggles — so a form built with plain
+            `useState(initial)` only picks up `editing` the very first time
+            it renders and then keeps showing whatever was last typed,
+            including into a later "Edit" click on a different record. Keying
+            on the record's id forces React to tear down and remount the form
+            fresh whenever `editing` changes (a different row, or New vs.
+            Edit), the same fix `HoursInput` already applies via a
+            useEffect in CurriculumPage.tsx — this just does it once, here,
+            for every master-data form instead of requiring each one to
+            remember to. */}
+        <React.Fragment key={editing?.id ?? "__new__"}>
+          {renderForm(editing, close)}
+        </React.Fragment>
       </Dialog>
     </Card>
   )

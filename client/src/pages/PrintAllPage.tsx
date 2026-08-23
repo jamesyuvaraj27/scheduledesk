@@ -8,6 +8,7 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { Link } from "react-router-dom"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
 import { ClassCell } from "@/components/timetable/ClassCell"
+import { PrintLogo } from "@/components/timetable/PrintLogo"
 import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -94,6 +95,7 @@ export function PrintAllPage() {
           >
             <PrintFitPage className="rounded-xl border bg-card p-5 print:border-0 print:p-0 print:rounded-none">
               <header className="text-center mb-4">
+                <PrintLogo />
                 <h2 className="font-semibold text-lg">
                   {section.branch.code ?? section.branch.name} · Section{" "}
                   {section.name} · Room {section.homeRoom?.name ?? "—"}

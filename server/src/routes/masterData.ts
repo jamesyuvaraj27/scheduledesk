@@ -2,8 +2,20 @@ import { Router } from "express"
 import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { asyncHandler, notFound, param } from "../lib/errors.js"
+import { compareSections } from "../lib/sectionOrder.js"
 
 export const masterDataRouter = Router()
+
+/** CSM, CSD, CAI, AIML, then anything else alphabetically — see sectionOrder.ts. */
+const byBranchCode = compareSections<{ code: string }>({
+  branchCodeOf: (b) => b.code,
+  nameOf: (b) => b.code,
+})
+const byBranchThenName = compareSections<{ branch: { code: string }; name: string; year?: number }>({
+  yearOf: (s) => s.year,
+  branchCodeOf: (s) => s.branch.code,
+  nameOf: (s) => s.name,
+})
 
 /* ---------------- Departments ---------------- */
 
@@ -22,6 +34,9 @@ masterDataRouter.get(
         _count: { select: { branches: true, faculty: true } },
       },
     })
+    // Branches listed under each department follow the same CSM/CSD/CAI/AIML
+    // priority as everywhere else, not plain alphabetical.
+    for (const d of departments) d.branches.sort(byBranchCode)
     res.json(departments)
   })
 )
@@ -75,6 +90,7 @@ masterDataRouter.get(
         _count: { select: { sections: true, subjects: true } },
       },
     })
+    branches.sort(byBranchCode)
     res.json(branches)
   })
 )
@@ -149,6 +165,7 @@ masterDataRouter.get(
         homeRoom: true,
       },
     })
+    sections.sort(byBranchThenName)
     res.json(sections)
   })
 )

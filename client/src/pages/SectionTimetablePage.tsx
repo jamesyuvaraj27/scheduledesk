@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
 import { ClassCell } from "@/components/timetable/ClassCell"
+import { PrintLogo } from "@/components/timetable/PrintLogo"
 import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
@@ -57,6 +58,7 @@ export function SectionTimetablePage() {
 
       <PrintFitPage className="rounded-xl border bg-card p-5 print:border-0 print:p-0">
         <header className="text-center mb-4">
+          <PrintLogo />
           {/* Branch, section and room lead the sheet — it's how the office
               identifies which timetable they're holding. */}
           <h1 className="font-semibold text-xl">

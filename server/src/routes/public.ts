@@ -30,6 +30,7 @@ import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
 import { buildDayGrid, dayEndTime } from "../lib/periods.js"
 import { ensureLiveVersion } from "../lib/versions.js"
+import { compareSections } from "../lib/sectionOrder.js"
 
 export const publicRouter = Router()
 
@@ -111,6 +112,14 @@ publicRouter.get(
         orderBy: { name: "asc" },
       }),
     ])
+
+    sections.sort(
+      compareSections({
+        yearOf: (s) => s.year,
+        branchCodeOf: (s) => s.branch.code,
+        nameOf: (s) => s.name,
+      })
+    )
 
     const years = [...new Set(sections.map((s) => s.year))]
       .sort((a, b) => a - b)
@@ -361,6 +370,14 @@ publicRouter.get(
         orderBy: [{ dayOfWeek: "asc" }, { startPeriod: "asc" }],
       }),
     ])
+
+    sections.sort(
+      compareSections({
+        yearOf: (s) => s.year,
+        branchCodeOf: (s) => s.branch.code,
+        nameOf: (s) => s.name,
+      })
+    )
 
     res.json({
       term: { id: term.id, label: term.label },

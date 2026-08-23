@@ -16,6 +16,7 @@ import {
   type RoomType,
   type SchedulingContext,
 } from "../lib/scheduling.js"
+import { compareSections } from "../lib/sectionOrder.js"
 
 export const overviewRouter = Router()
 
@@ -71,6 +72,16 @@ async function loadTermData(versionSpec?: VersionSpec) {
       prisma.room.findMany(),
       prisma.faculty.findMany(),
     ])
+
+  // Feeds both /build-status (Dashboard) and /print/sections (Print All) —
+  // fixing the order once here covers both.
+  sections.sort(
+    compareSections({
+      yearOf: (s) => s.year,
+      branchCodeOf: (s) => s.branch.code,
+      nameOf: (s) => s.name,
+    })
+  )
 
   const placed: PlacedEntry[] = entries.map((e) => ({
     id: e.id,

@@ -3,6 +3,7 @@ import { z } from "zod"
 import { prisma } from "../lib/prisma.js"
 import { AppError, asyncHandler, notFound, param } from "../lib/errors.js"
 import { ACTIVITY_TYPES, ACTIVITY_WEEKLY_HOURS } from "../lib/scheduling.js"
+import { compareSections } from "../lib/sectionOrder.js"
 
 export const curriculumRouter = Router()
 
@@ -265,6 +266,13 @@ curriculumRouter.get(
       orderBy: [{ year: "asc" }, { name: "asc" }],
       include: { branch: { include: { department: true } }, homeRoom: true },
     })
+    sections.sort(
+      compareSections({
+        yearOf: (s) => s.year,
+        branchCodeOf: (s) => s.branch.code,
+        nameOf: (s) => s.name,
+      })
+    )
 
     if (!term) {
       return res.json({
