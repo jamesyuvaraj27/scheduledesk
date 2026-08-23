@@ -1,22 +1,30 @@
 /**
- * Merge Classes — combining sections as a POST-ASSIGNMENT operation.
+ * Merge Classes — an explicit, administrative ROOM-SHARING operation,
+ * performed as a POST-ASSIGNMENT step.
  *
- * Combined sections and shared rooms are one mechanism (`TimetableEntry.
- * sharedSlotId`, see `sharedSlots.ts`) reached two different ways:
+ * The office builds both sections' timetables as ordinary, independent
+ * entries first — this works for any subject/faculty combination except two
+ * sections sharing the same faculty at the same hour, which stays a normal
+ * FACULTY_CLASH (see `scheduling.ts`'s `facultyShareAllowed`) exactly as it
+ * always has. Later, the office comes back to this page, picks two
+ * already-placed classes for the same day/period, and explicitly puts them
+ * in one destination room together. Each entry keeps its OWN subject and
+ * faculty unchanged — merging never implies they're "the same class," only
+ * that they now share a room. All four combinations (same/different subject
+ * × same/different faculty) are allowed here, since sharing a room is the
+ * only thing being decided.
  *
- *   - "combine at placement" (`timetable.ts`'s `shareWithEntryId`,
- *     `rooms.ts`'s `PATCH /entries/:id/room` with `shareWithEntryId`) — offered
- *     the moment a placement would otherwise clash. Untouched by this file.
+ * A same-faculty pair specifically can only reach a shared room via the
+ * OTHER mechanism — "combine at placement" (`timetable.ts`'s
+ * `shareWithEntryId`, `rooms.ts`'s `PATCH /entries/:id/room` with
+ * `shareWithEntryId`, both untouched by this file) — because it can never
+ * exist as two independent, unmerged entries in the first place.
  *
- *   - Merge Classes (this file) — the office builds both sections' timetables
- *     as ordinary, independent entries first (`scheduling.ts`'s
- *     `sameSubjectTwin` is what allows that without a clash), then comes back
- *     later, picks the two existing entries, and explicitly says "put these
- *     in one room together."
- *
- * Both end up as the exact same shape in the database — two TimetableEntry
- * rows sharing a tag, in the same room. Nothing here introduces a new
- * timetable architecture or duplicates Faculty/Room/Section master data.
+ * Both mechanisms end up as the exact same shape in the database — two
+ * TimetableEntry rows sharing a `sharedSlotId` tag, in the same room —
+ * distinguished afterwards only by `preMergeRoomId` (set exclusively by
+ * Merge Classes; see `GET /merge/active` below). Nothing here introduces a
+ * new timetable architecture or duplicates Faculty/Room/Section master data.
  */
 
 import { Router } from "express"
@@ -45,8 +53,8 @@ const sectionLabel = (s: { year: number; name: string; branch: { code: string } 
 /**
  * Every THEORY/LAB class whose OWN start period is this day+period, across
  * every section/year — the pool the "Class 1" / "Class 2" pickers choose
- * from. Activities (no subject, no faculty) never qualify — there is nothing
- * for the merge rule (same subject, same faculty) to compare.
+ * from. Activities (no subject, no faculty) never qualify — Merge Classes
+ * is scoped to subject-bearing classes only.
  */
 mergeRouter.get(
   "/merge/options",
@@ -80,6 +88,11 @@ mergeRouter.get(
         ? candidates.find((o) => o.id !== e.id && o.sharedSlotId === e.sharedSlotId)
         : undefined
 
+      // Room-sharing eligibility only — NOT a subject/faculty match. Any of
+      // the four subject/faculty combinations may merge; what actually has
+      // to line up is that both occupy the same shape of slot (so one
+      // destination room fits both) and haven't already been claimed by
+      // another merge.
       const compatibleWith = alreadyMerged
         ? []
         : candidates
@@ -88,8 +101,6 @@ mergeRouter.get(
                 o.id !== e.id &&
                 !o.sharedSlotId &&
                 o.sectionId !== e.sectionId &&
-                o.subjectId === e.subjectId &&
-                o.facultyId === e.facultyId &&
                 o.periodSpan === e.periodSpan &&
                 o.entryType === e.entryType
             )
@@ -281,11 +292,23 @@ mergeRouter.post(
 /* ---------------------------- Currently merged ----------------------------- */
 
 /**
- * Every currently-merged pair, grouped by tag — the "currently merged" list
- * for the Merge Classes page's Unmerge affordance. Restricted to groups that
- * are genuinely combined sections (same subject + same faculty on every
- * member) rather than shared rooms — the derivation the schema comment
- * describes — since Merge Classes only ever creates the former.
+ * Every currently-merged group, grouped by tag — the "currently merged" list
+ * for the Merge Classes page's Unmerge affordance.
+ *
+ * `sharedSlotId` alone can't tell a Merge Classes group apart from an older
+ * "combine at placement" (Shared Room) group — both use the same tag, and
+ * now that Merge Classes allows any subject/faculty combination, a
+ * subject/faculty match can't be used to infer which mechanism made a group
+ * either (that inference broke the moment different-subject/different-
+ * faculty merges became legal). `preMergeRoomId` is the precise signal
+ * instead: it's set only by `mergeExistingEntries` (this file's `POST
+ * /merge`, via `sharedSlots.ts`) and never by `joinSharedSlot` (the
+ * combine-at-placement path in `timetable.ts`/`rooms.ts`) — so a group where
+ * every member carries a non-null `preMergeRoomId` is, unambiguously, a
+ * Merge Classes group.
+ *
+ * Subject and faculty are reported per-section now, not at the group level,
+ * since they can legitimately differ across a merged group's members.
  */
 mergeRouter.get(
   "/merge/active",
@@ -302,15 +325,7 @@ mergeRouter.get(
     }
 
     const active = [...groups.entries()]
-      .filter(([, members]) => {
-        const [first, ...rest] = members
-        return (
-          members.length >= 2 &&
-          first.subjectId &&
-          first.facultyId &&
-          rest.every((m) => m.subjectId === first.subjectId && m.facultyId === first.facultyId)
-        )
-      })
+      .filter(([, members]) => members.length >= 2 && members.every((m) => m.preMergeRoomId))
       .map(([sharedSlotId, members]) => {
         const first = members[0]
         return {
@@ -319,12 +334,6 @@ mergeRouter.get(
           startPeriod: first.startPeriod,
           periodSpan: first.periodSpan,
           entryType: first.entryType,
-          subject: first.subject
-            ? { id: first.subject.id, code: first.subject.code, name: first.subject.name }
-            : null,
-          faculty: first.faculty
-            ? { id: first.faculty.id, name: first.faculty.name, facultyNo: first.faculty.facultyNo }
-            : null,
           room: first.room ? { id: first.room.id, name: first.room.name } : null,
           sections: members.map((m) => ({
             id: m.sectionId,
@@ -334,6 +343,12 @@ mergeRouter.get(
             // The entry id — not the section id — is what Unmerge needs
             // (`POST /entries/:id/unmerge` takes any one member's entry).
             entryId: m.id,
+            subject: m.subject
+              ? { id: m.subject.id, code: m.subject.code, name: m.subject.name }
+              : null,
+            faculty: m.faculty
+              ? { id: m.faculty.id, name: m.faculty.name, facultyNo: m.faculty.facultyNo }
+              : null,
           })),
         }
       })

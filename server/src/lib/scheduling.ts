@@ -192,38 +192,31 @@ function roomShareAllowed(
 }
 
 /**
- * Is this the SAME class reaching two sections at once — one teacher, one
- * subject, taught to two sections in the same hour?
+ * May these two share a FACULTY member at the same time?
  *
- * Unlike `roomShareAllowed`, this does NOT require a shared-slot tag. A
- * teacher assigned the same subject to two different sections at the same
- * hour is never a faculty clash, tagged or not — reconciling the ROOM is a
- * separate, later, deliberate step ("Merge Classes" in `sharedSlots.ts`),
- * not what makes the assignment itself legal. That is what lets both
- * sections be placed as ordinary, independent entries first — even into two
- * different rooms — which is the whole point: Merge Classes needs something
- * already on the timetable to select and combine, not a decision made while
- * placing the first one.
+ * Strictly tag-based, mirroring `roomShareAllowed` — a faculty clash is a
+ * faculty clash unless the office has explicitly said these two rows share
+ * this hour on purpose. There is deliberately no untagged "same subject"
+ * exemption: normal faculty-clash detection stays exactly as strict as it
+ * was before Merge Classes existed.
  *
- * The `subjectId` match is still the load-bearing part. Without it this
- * would excuse every faculty clash, so
- *
- *     AFF1 Mon P1: Ravi -> DBMS -> CSM-A
- *     AFF1 Mon P1: Ravi -> OS   -> CSM-B
- *
- * would go through silently — one person timetabled to teach two different
- * subjects simultaneously. That is not a combined class in the making; it is
- * a straightforward double-booking, and it stays blocked. A null subjectId
- * on either side never counts as a match either, so two activities with no
- * subject at all (e.g. two Library hours) don't fall in here by accident —
- * that case is handled separately, by `roomShareAllowed`'s tag, same as
- * before.
+ * That means two sections can no longer be independently placed with the
+ * same faculty at the same hour and reconciled into one room later — a
+ * same-faculty pair has to go through the room from the start, via the
+ * existing "combine at placement" flow (`joinSharedSlot`, wired through
+ * `shareWithEntryId` in `timetable.ts`/`rooms.ts`), which is already
+ * subject/faculty-agnostic and tags both rows immediately. Merge Classes
+ * (`sharedSlots.ts`'s `mergeExistingEntries`) is for reconciling two
+ * *already independently placed* entries into a shared room after the fact
+ * — which, once this exemption is tag-gated, is only ever reachable for a
+ * DIFFERENT-faculty pair, since a same-faculty pair could never have gotten
+ * onto the timetable independently in the first place.
  */
-function sameSubjectTwin(
-  a: { subjectId?: string | null },
-  b: { subjectId?: string | null }
+function facultyShareAllowed(
+  a: { sharedSlotId?: string | null },
+  b: { sharedSlotId?: string | null }
 ): boolean {
-  return Boolean(a.subjectId) && a.subjectId === b.subjectId
+  return sharesSlot(a, b)
 }
 
 /**
@@ -371,7 +364,7 @@ export function validatePlacement(
       entry.facultyId &&
       entry.facultyId === candidate.facultyId &&
       entry.sectionId !== candidate.sectionId &&
-      !sameSubjectTwin(candidate, entry)
+      !facultyShareAllowed(candidate, entry)
     ) {
       conflicts.push({
         code: "FACULTY_CLASH",
@@ -576,9 +569,14 @@ export function validateSection(
     }
   }
 
-  // Soft advisory: a faculty+subject "twin" across two sections (allowed —
-  // see `sameSubjectTwin` above) that is still sitting in two different
-  // rooms because nobody has run Merge Classes on it yet.
+  // Soft advisory: a faculty+subject "twin" across two sections that is
+  // still sitting in two different rooms, untagged. `validatePlacement`
+  // no longer lets a NEW placement like that through untagged (FACULTY_CLASH
+  // is strictly tag-gated — see `facultyShareAllowed` above), so this can
+  // only describe data that predates that rule or was edited directly. Left
+  // in place as a defensive nudge for exactly that case, rather than
+  // removed as dead code, since it costs nothing and stays correct if such
+  // a row is ever found.
   for (const msg of unmergedFacultyTwins(ctx.entries, ctx)) {
     warnings.push(msg)
   }
@@ -588,14 +586,16 @@ export function validateSection(
 
 /**
  * Faculty+subject "twins" — the same teacher assigned the same subject to
- * two different sections at the same hour — that have not (yet) been
- * reconciled into one room via Merge Classes.
+ * two different sections at the same hour — that are sitting in two
+ * different rooms, untagged.
  *
- * This is not a rule violation: `validatePlacement`/`sameSubjectTwin`
- * deliberately allow a twin to exist in two different rooms, because Merge
- * Classes needs something already on the timetable to select. But an
- * un-merged twin means the teacher is nominally booked into two rooms at
- * once, which is worth a soft nudge rather than staying invisible forever.
+ * `validatePlacement`'s FACULTY_CLASH is strictly tag-gated (see
+ * `facultyShareAllowed` above), so a NEW twin like this can no longer be
+ * placed independently — it would be blocked outright. This warning exists
+ * for a row that reached this state some other way (data placed before that
+ * rule was tightened, or edited directly): the teacher is nominally booked
+ * into two rooms at once, which is worth a soft nudge rather than staying
+ * invisible forever.
  */
 export function unmergedFacultyTwins(
   entries: PlacedEntry[],

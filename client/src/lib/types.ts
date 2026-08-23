@@ -687,8 +687,7 @@ export interface ActiveMergeGroup {
   startPeriod: number
   periodSpan: number
   entryType: MergeableEntryType
-  subject: { id: string; code: string; name: string } | null
-  faculty: { id: string; name: string; facultyNo: string } | null
+  /** The shared destination room — same for every member. */
   room: { id: string; name: string } | null
   sections: {
     id: string
@@ -697,6 +696,9 @@ export interface ActiveMergeGroup {
     branchCode: string
     /** This section's own entry id — pass to `POST /entries/:id/unmerge`. */
     entryId: string
+    /** Each member keeps its own subject/faculty — they can differ. */
+    subject: { id: string; code: string; name: string } | null
+    faculty: { id: string; name: string; facultyNo: string } | null
   }[]
 }
 

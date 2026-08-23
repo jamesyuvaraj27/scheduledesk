@@ -1,7 +1,16 @@
 /**
- * Reproduces, end-to-end over real HTTP, the exact scenarios from the user's
- * "FIX COMBINED SECTION FACULTY ASSIGNMENT" spec, against a scratch database
- * (see guard.mjs — this refuses to run against a non-empty DB).
+ * Reproduces, end-to-end over real HTTP, the scenarios from the user's
+ * original "FIX COMBINED SECTION FACULTY ASSIGNMENT" spec, against a scratch
+ * database (see guard.mjs — this refuses to run against a non-empty DB).
+ *
+ * NOTE: that spec's own "same faculty + same subject in a different room,
+ * untagged, is an ordinary placement" behavior was later reverted by the
+ * Merge Classes room-sharing business-rule change — FACULTY_CLASH is
+ * strictly tag-gated again. CASE 3/4 below assert the CURRENT (reverted)
+ * behavior for that sub-case; everything else in this file (shareWithEntryId
+ * combining, same-faculty-different-subject staying blocked, shared rooms
+ * between different faculty) is unaffected and still verifies the original
+ * spec directly.
  *
  * Does NOT modify any application code. Pure verification.
  */
@@ -152,11 +161,12 @@ console.log("\n=== CASE 3: Combined THEORY — same faculty, same subject, two s
   const firstEntryId = first.json?.id
 
   // Both sections share the SAME home room in this fixture, so placing CSM-B
-  // -> DBMS -> Ravi at the same hour WITHOUT declaring a share still lands in
-  // the same room as CSM-A's entry — a real ROOM_CLASH, since nothing has
-  // been merged yet. (Same faculty + same subject is no longer a
-  // FACULTY_CLASH by itself — see Merge Classes / `sameSubjectTwin` — but
-  // landing in the same room untagged is still refused exactly as before.)
+  // -> DBMS -> Ravi at the same hour WITHOUT declaring a share lands in the
+  // same room as CSM-A's entry AND shares Ravi with it — both a real
+  // ROOM_CLASH and a real FACULTY_CLASH, since nothing has been tagged yet.
+  // (Reverted: FACULTY_CLASH is strictly tag-gated again — see
+  // `facultyShareAllowed` in scheduling.ts — there is no untagged
+  // same-subject exemption any more.)
   const rawSecond = await post(`/sections/${secB.id}/entries`, {
     dayOfWeek: "MON",
     startPeriod: 1,
@@ -164,27 +174,32 @@ console.log("\n=== CASE 3: Combined THEORY — same faculty, same subject, two s
     subjectId: dbms.id,
   })
   ok(
-    "un-declared second placement into the SAME room is refused (409 ROOM_CLASH, not FACULTY_CLASH)",
+    "un-declared second placement into the SAME room is refused (409, both ROOM_CLASH and FACULTY_CLASH)",
     rawSecond.status === 409 &&
       rawSecond.json?.details?.some((d) => d.code === "ROOM_CLASH") &&
-      !rawSecond.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
+      rawSecond.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
     rawSecond.json
   )
 
-  // But the same "twin" placed into a DIFFERENT room is a fully ordinary,
-  // independent placement now — no clash at all, no special step. This is
-  // the "Merge Classes" premise: build both normally first, merge later.
+  // Reverted: the same "twin" placed at the SAME hour into a DIFFERENT room
+  // is now ALSO blocked — untagged same-faculty is a real FACULTY_CLASH
+  // regardless of room. Getting this pair onto the timetable together
+  // requires the `shareWithEntryId` combine below from the start, not a
+  // "place independently, reconcile later" step. (Same day/period as the
+  // first entry, MON P1 — a different period would never have overlapped
+  // in the first place and wouldn't test anything.)
   const roomTheory2 = (await post("/rooms", { name: "TZ-AFF2", type: "CLASSROOM" })).json
   const twinDifferentRoom = await post(`/sections/${secB.id}/entries`, {
     dayOfWeek: "MON",
-    startPeriod: 2,
+    startPeriod: 1,
     entryType: "THEORY",
     subjectId: dbms.id,
     roomId: roomTheory2.id,
   })
   ok(
-    "same faculty + same subject in a DIFFERENT room, untagged, is an ordinary placement (201)",
-    twinDifferentRoom.status === 201,
+    "same faculty + same subject in a DIFFERENT room, untagged, is STILL blocked (409 FACULTY_CLASH)",
+    twinDifferentRoom.status === 409 &&
+      twinDifferentRoom.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
     twinDifferentRoom.json
   )
 
@@ -225,8 +240,8 @@ console.log("\n=== CASE 4: Combined LAB — same faculty, same subject, two sect
   ok("first LAB entry (CSM-A DBMS Lab Mon P5-7) placed", first.status === 201, first.json)
   const firstEntryId = first.json?.id
 
-  // Same lab room specified explicitly for both — still a real ROOM_CLASH
-  // (same room, untagged), not a FACULTY_CLASH (same subject exempts it now).
+  // Same lab room specified explicitly for both — a real ROOM_CLASH AND a
+  // real FACULTY_CLASH, both untagged (reverted — see CASE 3 above).
   const rawSecond = await post(`/sections/${secB.id}/entries`, {
     dayOfWeek: "MON",
     startPeriod: 5,
@@ -236,18 +251,20 @@ console.log("\n=== CASE 4: Combined LAB — same faculty, same subject, two sect
     periodSpan: 3,
   })
   ok(
-    "un-declared second LAB placement into the SAME lab is refused (409 ROOM_CLASH, not FACULTY_CLASH)",
+    "un-declared second LAB placement into the SAME lab is refused (409, both ROOM_CLASH and FACULTY_CLASH)",
     rawSecond.status === 409 &&
       rawSecond.json?.details?.some((d) => d.code === "ROOM_CLASH") &&
-      !rawSecond.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
+      rawSecond.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
     rawSecond.json
   )
 
-  // The same LAB twin into a DIFFERENT lab room is ordinary, untagged, no
-  // clash — the LAB half of the "Step 1" premise.
+  // Reverted: the same LAB twin at the SAME hour into a DIFFERENT lab room
+  // is ALSO now blocked — untagged same-faculty stays a real FACULTY_CLASH
+  // regardless of room, LAB included. (Same day as the first entry, MON —
+  // TUE would never have overlapped and wouldn't test anything.)
   const roomLab2 = (await post("/rooms", { name: "TZ-LAB2", type: "LAB" })).json
   const twinDifferentLab = await post(`/sections/${secB.id}/entries`, {
-    dayOfWeek: "TUE",
+    dayOfWeek: "MON",
     startPeriod: 5,
     entryType: "LAB",
     subjectId: dbmsLab.id,
@@ -255,8 +272,9 @@ console.log("\n=== CASE 4: Combined LAB — same faculty, same subject, two sect
     periodSpan: 3,
   })
   ok(
-    "same faculty + same subject LAB in a DIFFERENT lab, untagged, is an ordinary placement (201)",
-    twinDifferentLab.status === 201,
+    "same faculty + same subject LAB in a DIFFERENT lab, untagged, is STILL blocked (409 FACULTY_CLASH)",
+    twinDifferentLab.status === 409 &&
+      twinDifferentLab.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
     twinDifferentLab.json
   )
 
@@ -272,7 +290,7 @@ console.log("\n=== CASE 4: Combined LAB — same faculty, same subject, two sect
   ok("combined LAB placement (shareWithEntryId) is ALLOWED (201)", combined.status === 201, combined.json)
 }
 
-console.log("\n=== CASE 5: Same faculty, DIFFERENT subject, same time -> must stay BLOCKED ===")
+console.log("\n=== CASE 5: Same faculty, DIFFERENT subject, same time -> undeclared placement stays BLOCKED ===")
 {
   // Ravi -> OS -> CSM-A, Tue P1 (ordinary placement).
   const osEntry = await post(`/sections/${secA.id}/entries`, {
@@ -284,7 +302,8 @@ console.log("\n=== CASE 5: Same faculty, DIFFERENT subject, same time -> must st
   ok("Ravi/OS/CSM-A Tue P1 placed", osEntry.status === 201, osEntry.json)
 
   // Try Ravi -> DBMS -> CSM-B at the same hour. Different subject, same
-  // faculty -> must be blocked, and must NOT be offered a combine option.
+  // faculty -> the UNDECLARED placement must still be blocked (normal
+  // FACULTY_CLASH stays strict, whatever the subjects).
   const clash = await post(`/sections/${secB.id}/entries`, {
     dayOfWeek: "TUE",
     startPeriod: 1,
@@ -297,13 +316,20 @@ console.log("\n=== CASE 5: Same faculty, DIFFERENT subject, same time -> must st
     clash.json
   )
 
+  // Reverted/business-rule change: a combine option IS now offered here.
+  // `facultyShareAllowed` is purely tag-based, so the preview in
+  // `withCombine` (timetable.ts) clears FACULTY_CLASH once both sides carry
+  // the same tag, REGARDLESS of subject — which is exactly combo 3
+  // (different subject, same faculty) from the room-sharing business rule,
+  // reachable via `shareWithEntryId`. This is intentional, not a leftover
+  // double-booking offer: `validateMergePair` and this preview agree.
   const avail = await get(
     `/sections/${secB.id}/availability?entryType=THEORY&subjectId=${dbms.id}`
   )
   const tue1 = avail.json?.slots?.find((s) => s.dayOfWeek === "TUE" && s.startPeriod === 1)
   ok(
-    "no combine option is offered for a genuine double-booking",
-    tue1 && tue1.available === false && tue1.combinableWithEntryId == null,
+    "a combine option IS offered — different subject, same faculty is a valid room-share (combo 3)",
+    tue1 && tue1.available === false && tue1.combinableWithEntryId === osEntry.json?.id,
     tue1
   )
 }

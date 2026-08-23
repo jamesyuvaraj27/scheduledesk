@@ -26,12 +26,13 @@ const sectionLabel = (s: { year: number; branchCode: string; name: string }) =>
  * Merge Classes — combine two already-placed classes into one occurrence,
  * after the fact.
  *
- * The normal builder (`SectionBuilderPage`) already lets two sections be
- * assigned the same subject/faculty at the same hour as two ordinary,
- * independent entries (in different rooms) — that's deliberate, see
- * `scheduling.ts`'s `sameSubjectTwin`. This page is where the office comes
- * back afterwards and says "these two are actually one class — put them in
- * one room together."
+ * This is a room-sharing operation, not a "these are the same class"
+ * declaration — the two classes keep their own individual subject and
+ * faculty unchanged; only the destination room is shared. Any combination
+ * of matching/different subject and faculty is allowed, EXCEPT two classes
+ * with the same faculty: a faculty clash between two sections stays a
+ * normal, blocking clash (see `scheduling.ts`'s `facultyShareAllowed`) —
+ * for that case, use "Shared Room" while placing the class instead.
  */
 export function MergeClassesPage() {
   const qc = useQueryClient()
@@ -124,8 +125,8 @@ export function MergeClassesPage() {
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
           Build each section's timetable normally first. Come back here to
-          intentionally combine two already-placed classes — same subject,
-          same faculty — into one room.
+          intentionally put two already-placed classes into one shared room —
+          each keeps its own subject and faculty.
         </p>
       </div>
 
@@ -178,8 +179,8 @@ export function MergeClassesPage() {
           <CardHeader>
             <CardTitle className="text-base">2. Pick the two classes</CardTitle>
             <CardDescription>
-              Only classes with the same subject and faculty at this hour can
-              be merged — pick the first one to see who it can be merged with.
+              Any two different sections' classes at this hour can share a
+              room — pick the first one to see who it can be merged with.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -339,10 +340,11 @@ function MergePreview({
         </div>
       </div>
       <div className="mt-3 pt-3 border-t flex items-center gap-2">
-        <Badge variant="warning">Combined class</Badge>
+        <Badge variant="warning">Shared room</Badge>
         <span>
-          {classA.subject?.code} · {classA.faculty?.name} ·{" "}
-          {sectionLabel(classA.section)} + {sectionLabel(classB.section)} ·{" "}
+          {sectionLabel(classA.section)} ({classA.subject?.code ?? "—"} /{" "}
+          {classA.faculty?.name ?? "—"}) + {sectionLabel(classB.section)} (
+          {classB.subject?.code ?? "—"} / {classB.faculty?.name ?? "—"}) →{" "}
           <span className="font-medium">{roomName}</span>
         </span>
       </div>
@@ -384,12 +386,17 @@ function ActiveMerges({ onChanged }: { onChanged: () => void }) {
               >
                 <div>
                   <div className="font-medium">
-                    {g.subject?.code} · {g.faculty?.name} · {g.dayOfWeek} P{g.startPeriod}
+                    {g.dayOfWeek} P{g.startPeriod}
                     {g.periodSpan > 1 ? `–${g.startPeriod + g.periodSpan - 1}` : ""} ·{" "}
                     {g.room?.name ?? "no room"}
                   </div>
                   <div className="text-muted-foreground">
-                    {g.sections.map(sectionLabel).join(" + ")}
+                    {g.sections
+                      .map(
+                        (s) =>
+                          `${sectionLabel(s)} (${s.subject?.code ?? "—"} / ${s.faculty?.name ?? "—"})`
+                      )
+                      .join(" + ")}
                   </div>
                 </div>
                 <Button

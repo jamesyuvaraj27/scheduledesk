@@ -1,24 +1,32 @@
 /**
  * Deliberately-shared timetable slots.
  *
- * Two arrangements the college genuinely wants, which plain clash detection
- * would otherwise refuse:
+ * Two mechanisms, one underlying tag:
  *
- *   Combined section — one teacher takes one subject to two sections at once,
- *     in one room. CSM-A and CSM-B both get DBMS / Ravi / AFF-1 at Mon P1.
+ *   Combine at placement (`joinSharedSlot` below, wired through
+ *     `shareWithEntryId` in `timetable.ts`/`rooms.ts`) — offered the moment
+ *     a placement would otherwise clash; places the second entry directly
+ *     into the shared room from the start. Subject/faculty-agnostic: this is
+ *     the ONLY way to get a same-faculty pair sharing a room, since a
+ *     same-faculty pair can no longer be placed independently first (see
+ *     `facultyShareAllowed` in `scheduling.ts`).
  *
- *   Shared room — two independent classes run in one room at one time.
- *     CSM-A gets DBMS / Ravi and CSM-B gets OS / Priya, both in AFF-1.
+ *   Merge Classes (`validateMergePair`/`mergeExistingEntries`/
+ *     `unmergeGroup` below, routed through `server/src/routes/merge.ts`) —
+ *     an explicit, later, administrative room-sharing operation: the office
+ *     builds both sections' timetables as ordinary independent entries
+ *     first, then comes back and picks two already-placed classes to put in
+ *     one room together. Any subject/faculty combination is allowed here —
+ *     the two entries keep their own individual subject and faculty
+ *     unchanged; only the room is shared.
  *
  * Both stay ordinary `TimetableEntry` rows, one per section, exactly as
- * before. Nothing is duplicated in master data: one Ravi, one AFF-1, one
- * CSM-A, one CSM-B. The only addition is a tag saying "these rows share
- * this hour on purpose", which is what the conflict engine looks at.
- *
- * The distinction between the two cases is never stored, because it is
- * already implied by the rows themselves — same faculty and same subject
- * reads as a combined class, anything else reads as a shared room — and a
- * stored mode could contradict the data it describes.
+ * before. Nothing is duplicated in master data: one faculty row, one room
+ * row, one row per section. The only addition is a tag saying "these rows
+ * share this hour on purpose", which is what the conflict engine looks at.
+ * `preMergeRoomId` (set only by Merge Classes, never by combine-at-placement)
+ * is what tells the two mechanisms apart afterwards, when that matters (see
+ * `GET /merge/active` in `merge.ts`).
  */
 
 import { randomUUID } from "node:crypto"
@@ -135,8 +143,11 @@ export async function pruneSharedSlot(sharedSlotId: string | null): Promise<void
 /* -------------------------------------------------------------------------- */
 
 /**
- * Two already-placed entries loaded and confirmed mergeable — a same-subject,
- * same-faculty "twin" across two different sections, at the same day/period.
+ * Two already-placed entries loaded and confirmed mergeable — two different
+ * sections' classes at the same day/period, ready to share a room. Subject
+ * and faculty are NOT required to match — Merge Classes is a room-sharing
+ * operation, not a "these are really one class" declaration; each entry
+ * keeps its own subject and faculty exactly as placed.
  */
 export interface MergeablePair {
   a: NonNullable<Awaited<ReturnType<typeof prisma.timetableEntry.findUnique>>>
@@ -146,14 +157,20 @@ export interface MergeablePair {
 /**
  * Load and validate two EXISTING entries as a Merge Classes candidate.
  *
- * Structural checks only — existence, version, exact day/period/span/type
- * match, same subject, same faculty, different section, neither already
- * merged. This is deliberately narrower than `validatePlacement`: it does not
- * check the destination room or third-party ROOM_CLASH, because that needs
- * the whole-term `SchedulingContext` the route layer already knows how to
- * build (see `server/src/routes/merge.ts`) — this only confirms the PAIR
- * itself is a legitimate merge target, mirroring the pairwise checks
- * `joinSharedSlot` already does for the "combine at placement" flow.
+ * Structural checks only — existence, version, exact day/period/span match,
+ * same `entryType` (a THEORY and a LAB entry could never share one valid
+ * destination room anyway — `validatePlacement`'s WRONG_ROOM_TYPE rule
+ * requires a LAB room for LAB and a non-LAB room for THEORY, which are
+ * mutually exclusive — so rejecting the mismatch here is just a clearer,
+ * earlier error than letting it fail downstream), different section, neither
+ * already merged. Deliberately does NOT require matching subject or faculty
+ * — see `MergeablePair` above. This is also deliberately narrower than
+ * `validatePlacement`: it does not check the destination room or
+ * third-party ROOM_CLASH, because that needs the whole-term
+ * `SchedulingContext` the route layer already knows how to build (see
+ * `server/src/routes/merge.ts`) — this only confirms the PAIR itself is a
+ * legitimate merge target, mirroring the pairwise checks `joinSharedSlot`
+ * already does for the "combine at placement" flow.
  */
 export async function validateMergePair(
   entryIdA: string,
@@ -188,12 +205,6 @@ export async function validateMergePair(
   }
   if (a.entryType !== b.entryType) {
     throw new AppError("Both classes have to be the same kind (theory or lab).", 422)
-  }
-  if (!a.subjectId || !b.subjectId || a.subjectId !== b.subjectId) {
-    throw new AppError("Both classes have to be the same subject to merge.", 422)
-  }
-  if (!a.facultyId || !b.facultyId || a.facultyId !== b.facultyId) {
-    throw new AppError("Both classes have to have the same faculty to merge.", 422)
   }
   if (a.sectionId === b.sectionId) {
     throw new AppError(

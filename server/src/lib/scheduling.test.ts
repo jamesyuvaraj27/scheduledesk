@@ -298,9 +298,10 @@ describe("clash detection", () => {
   })
 
   test("one faculty member cannot teach two DIFFERENT subjects to two sections at once", () => {
-    // Same subject would now be an allowed "twin" (see the combined-sections
-    // describe block below) — this test isolates the case that must still
-    // always be blocked: two different subjects, same person, same hour.
+    // An untagged pair is blocked regardless of subject match now (see the
+    // combined-sections describe block below) — this test isolates the case
+    // that must always stay blocked: two different subjects, same person,
+    // same hour, whether tagged or not.
     const ctx = context({
       entries: [placed({ id: "other", sectionId: SEC_B, startPeriod: 3 })],
     })
@@ -315,8 +316,7 @@ describe("clash detection", () => {
 
   test("faculty clash is detected across different years", () => {
     // Exactly the real scenario: 2nd year must fit around 3rd/4th year.
-    // Different subject, so this stays a real clash regardless of the
-    // same-subject "twin" exemption.
+    // Untagged, so this is a real clash regardless of subject.
     const ctx = context({
       entries: [
         placed({
@@ -429,29 +429,35 @@ describe("combined sections and shared rooms", () => {
       ]),
     })
 
-  test("untagged twins in the SAME room still clash on the room", () => {
-    // Same teacher, same subject, same room, no tag: placing straight into
-    // the same room is still a real ROOM_CLASH — reaching one room together
-    // is exactly what Merge Classes (the tag) is for, not an accident.
+  test("untagged twins in the SAME room clash on BOTH the room and the faculty", () => {
+    // Same teacher, same subject, same room, no tag: FACULTY_CLASH is
+    // strictly tag-gated (reverted — see `facultyShareAllowed`), so an
+    // untagged pair is a real clash on both fronts. Reaching one room
+    // together on purpose is what a tag (Merge Classes or Shared Room) is
+    // for, not an accident.
     const result = validatePlacement(joiner(), twoSectionCtx([anchor()]))
     assert.ok(codes(result).includes("ROOM_CLASH"))
     assert.ok(
-      !codes(result).includes("FACULTY_CLASH"),
-      "same teacher + same subject is never a faculty clash by itself"
+      codes(result).includes("FACULTY_CLASH"),
+      "untagged same-faculty pairs are a real clash, same subject or not"
     )
   })
 
-  test("STEP 1 — untagged twins in DIFFERENT rooms are two ordinary, independent placements", () => {
-    // The whole premise of Merge Classes: both sections can be assigned the
-    // same subject/faculty at the same hour as plain, independent entries —
-    // no special action, no clash — as long as each has its own room. Only
-    // choosing to put them in the SAME room (above) or the same tag needs a
-    // deliberate step.
+  test("untagged twins in DIFFERENT rooms is still a real FACULTY_CLASH", () => {
+    // Reverted behavior: normal faculty-clash detection stays strict. A
+    // same-faculty, same-subject pair can no longer be placed independently
+    // as two ordinary entries even in different rooms — that now requires
+    // the "combine at placement" (Shared Room / shareWithEntryId) flow,
+    // which tags both entries from the start (see the CASE 1 tests below).
     const result = validatePlacement(
       joiner({ roomId: ROOM_205 }),
       twoSectionCtx([anchor()])
     )
-    assert.deepEqual(result, [])
+    assert.ok(codes(result).includes("FACULTY_CLASH"))
+    assert.ok(
+      !codes(result).includes("ROOM_CLASH"),
+      "different rooms, so no room clash — only the faculty clash"
+    )
   })
 
   test("CASE 1 — same teacher, same subject, two sections, one room is allowed", () => {
@@ -462,16 +468,20 @@ describe("combined sections and shared rooms", () => {
     assert.deepEqual(result, [])
   })
 
-  test("CASE 1 invalid — same teacher, DIFFERENT subjects stays a faculty clash", () => {
-    // Ravi cannot take DBMS to one section and OS to another at one time,
-    // and saying "combined" does not make him able to.
+  test("CASE 1 — same teacher, DIFFERENT subjects, tagged is allowed (combo 3: room-sharing)", () => {
+    // Reverted behavior: `facultyShareAllowed` is purely tag-based now,
+    // mirroring `roomShareAllowed` — a tag is the administrator's explicit
+    // "these share this hour on purpose," and does not require matching
+    // subjects. This is what makes "different subject + same faculty"
+    // (combo 3 in the room-sharing business rule) reachable via "combine at
+    // placement" (`shareWithEntryId`), which was already subject-agnostic.
     const result = validatePlacement(
       joiner({ sharedSlotId: SLOT, subjectId: OS }),
       twoSectionCtx([anchor({ sharedSlotId: SLOT })])
     )
     assert.ok(
-      codes(result).includes("FACULTY_CLASH"),
-      "a tag must never excuse one person teaching two subjects at once"
+      !codes(result).includes("FACULTY_CLASH"),
+      "a tag exempts the faculty clash regardless of subject match"
     )
   })
 
@@ -500,24 +510,24 @@ describe("combined sections and shared rooms", () => {
     assert.ok(codes(result).includes("SECTION_CLASH"))
   })
 
-  test("different tags don't excuse landing in the same ROOM", () => {
-    // Same subject/faculty exempts FACULTY_CLASH regardless of tags (see
-    // above) — but a mismatched tag still means nothing was agreed about
-    // sharing this ROOM, so that half of it stays blocked.
+  test("different tags don't excuse landing in the same ROOM (or the faculty clash)", () => {
+    // A mismatched tag means nothing was agreed with EITHER side — not the
+    // room, and (reverted behavior) not the faculty either, since
+    // `facultyShareAllowed` is tag-based now too.
     const result = validatePlacement(
       joiner({ sharedSlotId: "some-other-slot" }),
       twoSectionCtx([anchor({ sharedSlotId: SLOT })])
     )
-    assert.ok(!codes(result).includes("FACULTY_CLASH"))
+    assert.ok(codes(result).includes("FACULTY_CLASH"))
     assert.ok(codes(result).includes("ROOM_CLASH"))
   })
 
-  test("a tag on one side only is not a share of the ROOM", () => {
+  test("a tag on one side only is not a share of the ROOM (or the faculty)", () => {
     const result = validatePlacement(
       joiner({ sharedSlotId: SLOT }),
       twoSectionCtx([anchor({ sharedSlotId: null })])
     )
-    assert.ok(!codes(result).includes("FACULTY_CLASH"))
+    assert.ok(codes(result).includes("FACULTY_CLASH"))
     assert.ok(codes(result).includes("ROOM_CLASH"))
   })
 
@@ -705,8 +715,9 @@ describe("availability for the clash-blocked picker", () => {
   })
 
   test("blocks exactly the slot where the faculty is busy with a DIFFERENT subject", () => {
-    // Different subject, so this is a real clash — same-subject twins are
-    // covered separately below, and are no longer blocked at all.
+    // Different subject, so this is a real clash — a same-subject twin at
+    // the same hour is covered separately below, and is ALSO blocked now
+    // (reverted: FACULTY_CLASH no longer has an untagged subject exemption).
     const ctx = context({
       entries: [
         placed({
@@ -729,10 +740,11 @@ describe("availability for the clash-blocked picker", () => {
     assert.equal(blocked[0].reasons[0].code, "FACULTY_CLASH")
   })
 
-  test("does NOT block a same-subject twin in a different room", () => {
-    // The Merge Classes premise: this section's teacher already teaching
-    // the same subject to another section, in another room, at this hour is
-    // not a clash — it's exactly the state Merge Classes expects to find.
+  test("DOES block a same-subject twin in a different room (reverted — needs a tag)", () => {
+    // Reverted behavior: an untagged same-faculty, same-subject twin is a
+    // real FACULTY_CLASH again, even in a different room. Getting this pair
+    // onto the timetable sharing an hour now requires "combine at
+    // placement" (Shared Room), which tags both sides immediately.
     const ctx = context({
       entries: [placed({ id: "busy", sectionId: SEC_B, dayOfWeek: "WED", startPeriod: 4 })],
     })
@@ -741,7 +753,8 @@ describe("availability for the clash-blocked picker", () => {
       ctx
     )
     const blocked = slots.filter((s) => !s.available)
-    assert.equal(blocked.length, 0)
+    assert.equal(blocked.length, 1)
+    assert.equal(blocked[0].reasons[0].code, "FACULTY_CLASH")
   })
 
   test("a 3-period lab is offered anywhere it fits in the day", () => {
