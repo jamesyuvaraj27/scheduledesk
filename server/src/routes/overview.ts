@@ -103,6 +103,15 @@ async function loadTermData(versionSpec?: VersionSpec) {
   const sectionNames = new Map(
     sections.map((s) => [s.id, `${s.branch.code}-${s.name} (Yr ${s.year})`])
   )
+  // Term-wide, derived from every placed entry's own subject — not any one
+  // section's curriculum. `unmergedFacultyTwins()` (called for every
+  // section via `validateSection`) can name a twin between two OTHER
+  // sections, so it needs a subject lookup that isn't scoped to whichever
+  // section is currently being validated. Mirrors `contextForSection()` in
+  // rooms.ts, which the same warning already relies on there.
+  const subjectNames = new Map(
+    entries.filter((e) => e.subject).map((e) => [e.subjectId!, e.subject!.code])
+  )
 
   /** Per-section context that still sees every other section's entries. */
   const contextFor = (sectionId: string): SchedulingContext => ({
@@ -122,7 +131,7 @@ async function loadTermData(versionSpec?: VersionSpec) {
         .map((a) => [a.subjectId, a.facultyId])
     ),
     rooms: roomMap,
-    names: { faculty: facultyNames, sections: sectionNames },
+    names: { faculty: facultyNames, sections: sectionNames, subjects: subjectNames },
   })
 
   return { term, version, sections, entries, sectionSubjects, assignments, contextFor }

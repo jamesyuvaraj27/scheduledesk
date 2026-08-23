@@ -112,7 +112,15 @@ async function loadContext(sectionId: string, versionSpec?: VersionSpec) {
       sections: new Map(
         allSections.map((s) => [s.id, `${s.branch.code}-${s.name} (Yr ${s.year})`])
       ),
-      subjects: new Map(sectionSubjects.map((ss) => [ss.subjectId, ss.subject.code])),
+      // Term-wide, derived from every placed entry's own subject — NOT this
+      // section's curriculum (`sectionSubjects` above is already filtered to
+      // `sectionId`). `unmergedFacultyTwins()` (via `validateSection` below)
+      // can name a twin between two OTHER sections entirely, so it needs a
+      // subject lookup that isn't scoped to whichever section this request
+      // happens to be validating. Mirrors `contextForSection()` in rooms.ts.
+      subjects: new Map(
+        entries.filter((e) => e.subject).map((e) => [e.subjectId!, e.subject!.code])
+      ),
     },
   }
 
