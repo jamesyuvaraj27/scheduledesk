@@ -8,6 +8,15 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  // Neon's pooled connection (DATABASE_URL, "-pooler" host) doesn't support
+  // the session-level advisory lock `prisma migrate` takes, so migrations
+  // time out against it. DIRECT_URL is Neon's non-pooled connection string
+  // (same credentials, host without "-pooler") — only `prisma migrate`/`db
+  // push` read this; the running app never does, so it's fine for it to be
+  // unset locally as long as `DATABASE_URL` is set, but Render's
+  // preDeployCommand runs `prisma migrate deploy` on every deploy and NEEDS
+  // this set in its environment or that step fails outright.
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------- Terms & timing ----------
