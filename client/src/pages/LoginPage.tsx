@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { KeyRound, ShieldCheck } from "lucide-react"
+import { ArrowLeft, KeyRound, ShieldCheck } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,57 +36,76 @@ export function LoginPage() {
     }
   }
 
+  // "Back" means wherever they were before landing here — the public
+  // timetable, the adjustment page, or an /admin/* route that bounced them
+  // here via RequireAdmin. Browser history covers all of those; the only
+  // case it can't (a bookmark or a fresh tab opened straight to /login) falls
+  // back to the public home page rather than doing nothing.
+  const goBack = () => {
+    if (window.history.length > 1) navigate(-1)
+    else navigate("/")
+  }
+
   return (
-    <div className="mx-auto max-w-md py-10">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <ShieldCheck className="size-4" /> Administrator sign in
-          </CardTitle>
-          <CardDescription>
-            Only the timetable office needs to sign in. Students and faculty can
-            use the{" "}
-            <Link to="/" className="underline underline-offset-2">
-              timetable
-            </Link>{" "}
-            and{" "}
-            <Link to="/adjustment" className="underline underline-offset-2">
-              class adjustment
-            </Link>{" "}
-            pages without an account.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {!passwordConfigured && (
-            <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
-              No administrator password is set on the server yet. Add{" "}
-              <code className="font-mono text-xs">ADMIN_PASSWORD</code> to the
-              server environment and restart it.
-            </div>
-          )}
+    <div className="relative min-h-svh">
+      <div className="absolute left-3 top-3 sm:left-6 sm:top-6">
+        <Button variant="ghost" size="sm" onClick={goBack} aria-label="Go back">
+          <ArrowLeft />
+          Back
+        </Button>
+      </div>
 
-          <form onSubmit={submit} className="space-y-3">
-            {error ? <ErrorState error={error} /> : null}
+      <div className="mx-auto max-w-md px-4 pt-16 pb-10 sm:pt-20">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldCheck className="size-4" /> Administrator sign in
+            </CardTitle>
+            <CardDescription>
+              Only the timetable office needs to sign in. Students and faculty can
+              use the{" "}
+              <Link to="/" className="underline underline-offset-2">
+                timetable
+              </Link>{" "}
+              and{" "}
+              <Link to="/adjustment" className="underline underline-offset-2">
+                class adjustment
+              </Link>{" "}
+              pages without an account.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {!passwordConfigured && (
+              <div className="mb-4 rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm">
+                No administrator password is set on the server yet. Add{" "}
+                <code className="font-mono text-xs">ADMIN_PASSWORD</code> to the
+                server environment and restart it.
+              </div>
+            )}
 
-            <div>
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                autoFocus
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
+            <form onSubmit={submit} className="space-y-3">
+              {error ? <ErrorState error={error} /> : null}
 
-            <Button type="submit" className="w-full" disabled={busy || !password}>
-              <KeyRound />
-              {busy ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+              <div>
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoFocus
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+
+              <Button type="submit" className="w-full" disabled={busy || !password}>
+                <KeyRound />
+                {busy ? "Signing in…" : "Sign in"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
