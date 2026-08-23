@@ -1,8 +1,8 @@
 import * as React from "react"
 import { useSearchParams } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
-import { Users, Printer } from "lucide-react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Users, Printer, Filter } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
@@ -10,11 +10,19 @@ import { Select } from "@/components/ui/select"
 import { EmptyState, ErrorState, LoadingState } from "@/components/ui/feedback"
 import { TimetableTable } from "@/components/timetable/TimetableTable"
 import { ClassCell } from "@/components/timetable/ClassCell"
+import { FacultyDayTable } from "@/components/timetable/FacultyDayTable"
 import { PrintFitPage } from "@/components/PrintFitPage"
 import { api } from "@/lib/api"
-import type { PublicFacultyTimetable, PublicMeta } from "@/lib/types"
+import type {
+  AdjustmentFacultyRow,
+  AdjustmentResponse,
+  Day,
+  PublicFacultyTimetable,
+  PublicMeta,
+} from "@/lib/types"
 
 type Entry = PublicFacultyTimetable["entries"][number]
+type FreeScope = "" | "department" | "college"
 
 /**
  * A faculty member's week, public and view-only — no sign-in, same as the
@@ -31,6 +39,15 @@ type Entry = PublicFacultyTimetable["entries"][number]
  * duplicates. A Shared Room never does this to a faculty view: the room's
  * other occupant belongs to a different faculty member, so it simply never
  * appears in this facultyId-filtered list.
+ *
+ * "Who's Free" (added 2026-08-23) is a second, independent panel below the
+ * one-teacher grid above — pick a day, then a scope (their own department,
+ * or the entire college), and see every faculty member's whole day for that
+ * scope, FREE periods included, so someone can tell at a glance who's
+ * available. It reuses `GET /public/adjustment?dayOfWeek=`, the same
+ * endpoint and `FacultyDayTable` grid the Class Adjustment page already
+ * uses — no new backend route needed, since that endpoint already returns
+ * every active faculty member's day plus their `departmentId`.
  */
 export function PublicFacultyTimetablePage() {
   const [params, setParams] = useSearchParams()
@@ -57,9 +74,59 @@ export function PublicFacultyTimetablePage() {
     enabled: Boolean(facultyId),
   })
 
+  // "Who's Free" state — its own day (defaults to the term's first working
+  // day) and scope. Kept in the URL like `faculty` above so a link to "who's
+  // free Wednesday, whole college" can be shared as-is.
+  const freeDay = (params.get("freeDay") || meta.data?.days[0]?.value || "") as Day | ""
+  const freeScope = (params.get("freeScope") ?? "") as FreeScope
+
+  const setFreeDay = (value: string) => {
+    const next = new URLSearchParams(params)
+    next.set("freeDay", value)
+    setParams(next)
+  }
+
+  // Ticking one scope always replaces the other — "Entire College" turns
+  // "Department" off and vice versa, since a query only ever means one or
+  // the other. Ticking an already-active box turns filtering off entirely.
+  const setFreeScope = (next: "department" | "college") => {
+    const nextParams = new URLSearchParams(params)
+    if (freeScope === next) nextParams.delete("freeScope")
+    else nextParams.set("freeScope", next)
+    setParams(nextParams)
+  }
+
+  const whoFree = useQuery({
+    queryKey: ["public-adjustment-wf", freeDay],
+    queryFn: () => api.get<AdjustmentResponse>(`/public/adjustment?dayOfWeek=${freeDay}`),
+    enabled: Boolean(freeDay) && freeScope !== "",
+  })
+
+  // Freest first (fewest periods taught that day), name as the tie-break —
+  // same ordering the Class Adjustment page uses for its candidate tiers.
+  const freeRows = React.useMemo(() => {
+    if (!whoFree.data || freeScope === "") return []
+    const byFreeness = (a: AdjustmentFacultyRow, b: AdjustmentFacultyRow) =>
+      a.periodsTaughtToday - b.periodsTaughtToday || a.faculty.name.localeCompare(b.faculty.name)
+
+    if (freeScope === "college") {
+      return [...whoFree.data.faculty].sort(byFreeness)
+    }
+    // Department scope reuses the department of whichever faculty member is
+    // currently selected above — there's no separate department dropdown.
+    const myRow = whoFree.data.faculty.find((f) => f.faculty.id === facultyId)
+    if (!myRow) return []
+    return whoFree.data.faculty
+      .filter((f) => f.faculty.departmentId === myRow.faculty.departmentId)
+      .sort(byFreeness)
+  }, [whoFree.data, freeScope, facultyId])
+
   if (meta.isLoading) return <LoadingState label="Loading faculty…" />
   if (meta.error) return <ErrorState error={meta.error} />
   if (!meta.data) return null
+
+  const deptName = timetable.data?.faculty.departmentName
+  const dayLabel = meta.data.days.find((d) => d.value === freeDay)?.label ?? freeDay
 
   return (
     <div className="space-y-4">
@@ -111,6 +178,74 @@ export function PublicFacultyTimetablePage() {
       ) : timetable.data ? (
         <FacultyGrid data={timetable.data} />
       ) : null}
+
+      <Card className="print:hidden">
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Filter className="size-4" /> Who&apos;s Free
+          </CardTitle>
+          <CardDescription>
+            Pick a day and a scope to see every faculty member&apos;s day in
+            that scope — free periods and all.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-end gap-x-6 gap-y-3">
+          <div className="w-40">
+            <Label htmlFor="free-day">Day</Label>
+            <Select id="free-day" value={freeDay} onChange={(e) => setFreeDay(e.target.value)}>
+              {meta.data.days.map((d) => (
+                <option key={d.value} value={d.value}>
+                  {d.label}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="flex flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="accent-foreground"
+                checked={freeScope === "department"}
+                disabled={!facultyId}
+                onChange={() => setFreeScope("department")}
+              />
+              {deptName ? `${deptName} department` : "Department"}
+            </label>
+            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+              <input
+                type="checkbox"
+                className="accent-foreground"
+                checked={freeScope === "college"}
+                onChange={() => setFreeScope("college")}
+              />
+              Entire College
+            </label>
+          </div>
+        </CardContent>
+      </Card>
+
+      {freeScope === "" ? null : (
+        <div className="print:hidden">
+          <h2 className="text-base font-semibold mb-1">
+            {dayLabel} · {freeScope === "college" ? "Entire college" : deptName ? `${deptName} department` : "Department"}
+          </h2>
+          <p className="text-sm text-muted-foreground mb-3">
+            FREE periods are shown as FREE; busy periods show what they&apos;re teaching.
+          </p>
+          {whoFree.isLoading ? (
+            <LoadingState label="Loading the day's timetable…" />
+          ) : whoFree.error ? (
+            <ErrorState error={whoFree.error} />
+          ) : !whoFree.data ? null : freeRows.length === 0 ? (
+            <EmptyState title="No faculty found for this scope." />
+          ) : (
+            <div className="rounded-xl border bg-card p-4">
+              <FacultyDayTable slots={whoFree.data.grid.slots} rows={freeRows} targetPeriod={null} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
