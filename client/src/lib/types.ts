@@ -646,3 +646,60 @@ export interface AdjustmentResponse {
   grid: { slots: GridSlot[]; workingDays: Day[]; numPeriods: number }
   faculty: AdjustmentFacultyRow[]
 }
+
+/* -------------------------------- Merge Classes ---------------------------- */
+
+/** THEORY/LAB only — Merge Classes never applies to an activity. */
+export type MergeableEntryType = "THEORY" | "LAB"
+
+/** One already-placed class, offered as a Merge Classes candidate. */
+export interface MergeOption {
+  entryId: string
+  section: { id: string; name: string; year: number; branchCode: string }
+  subject: { id: string; code: string; name: string } | null
+  faculty: { id: string; name: string; facultyNo: string } | null
+  room: { id: string; name: string } | null
+  entryType: MergeableEntryType
+  periodSpan: number
+  /** Already part of a merged pair — pick "Unmerge" on it first. */
+  alreadyMerged: boolean
+  mergedWithLabel: string | null
+  /** Other entryIds in this same response that this one could merge with. */
+  compatibleWith: string[]
+}
+
+export interface MergeOptionsResponse {
+  dayOfWeek: Day
+  startPeriod: number
+  options: MergeOption[]
+}
+
+export interface MergeResult {
+  sharedSlotId: string
+  a: TimetableEntry & { id: string }
+  b: TimetableEntry & { id: string }
+}
+
+/** One currently-merged pair (or group), for the "Currently merged" list. */
+export interface ActiveMergeGroup {
+  sharedSlotId: string
+  dayOfWeek: Day
+  startPeriod: number
+  periodSpan: number
+  entryType: MergeableEntryType
+  subject: { id: string; code: string; name: string } | null
+  faculty: { id: string; name: string; facultyNo: string } | null
+  room: { id: string; name: string } | null
+  sections: {
+    id: string
+    name: string
+    year: number
+    branchCode: string
+    /** This section's own entry id — pass to `POST /entries/:id/unmerge`. */
+    entryId: string
+  }[]
+}
+
+export interface ActiveMergesResponse {
+  active: ActiveMergeGroup[]
+}

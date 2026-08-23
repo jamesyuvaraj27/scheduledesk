@@ -12,6 +12,7 @@ import { versionsRouter } from "./routes/versions.js"
 import { importRouter } from "./routes/importer.js"
 import { overviewRouter } from "./routes/overview.js"
 import { roomsRouter } from "./routes/rooms.js"
+import { mergeRouter } from "./routes/merge.js"
 import { errorHandler } from "./lib/errors.js"
 
 // Checked before anything else so a bad connection string fails loudly at
@@ -69,6 +70,9 @@ app.use("/api/terms", termsRouter)
 // Mounted before masterData/timetable so /rooms/:id/timetable and
 // /entries/:id/room resolve here rather than matching their :id routes.
 app.use("/api", roomsRouter)
+// Merge Classes — cross-cutting like rooms.ts, mounted alongside it. No
+// path collides with an existing :id route (every segment here is distinct).
+app.use("/api", mergeRouter)
 app.use("/api", versionsRouter)
 app.use("/api", overviewRouter)
 app.use("/api", importRouter)

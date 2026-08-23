@@ -14,6 +14,7 @@ const navItems = [
   { to: "/admin/curriculum", label: "Curriculum" },
   { to: "/admin/faculty", label: "Faculty" },
   { to: "/admin/rooms", label: "Rooms" },
+  { to: "/admin/merge", label: "Merge Classes" },
   { to: "/admin/working-timetable", label: "Working Timetable" },
   { to: "/admin/print", label: "Print" },
   { to: "/admin/reset", label: "Reset Year" },

@@ -57,8 +57,13 @@ function classLabel(e: {
   )
 }
 
-/** The whole active term's scheduling context, for clash checks. */
-async function loadTermContext(versionSpec?: VersionSpec) {
+/**
+ * The whole active term's scheduling context, for clash checks. Exported so
+ * `merge.ts` can reuse it rather than re-deriving the same term-wide load —
+ * Merge Classes is a cross-cutting concern (it isn't scoped to one section or
+ * one room), but the data it needs to validate against is identical.
+ */
+export async function loadTermContext(versionSpec?: VersionSpec) {
   const term = await prisma.academicTerm.findFirst({
     where: { isActive: true },
     include: { timeConfig: true },
@@ -103,7 +108,7 @@ async function loadTermContext(versionSpec?: VersionSpec) {
  * Getting this wrong makes the engine report SUBJECT_NOT_IN_CURRICULUM for a
  * class that is plainly already on the timetable.
  */
-function contextForSection(
+export function contextForSection(
   sectionId: string,
   loaded: Awaited<ReturnType<typeof loadTermContext>>
 ): SchedulingContext {
@@ -150,6 +155,9 @@ function contextForSection(
       ),
       faculty: new Map(
         entries.filter((e) => e.faculty).map((e) => [e.facultyId!, e.faculty!.name])
+      ),
+      subjects: new Map(
+        entries.filter((e) => e.subject).map((e) => [e.subjectId!, e.subject!.code])
       ),
     },
   }

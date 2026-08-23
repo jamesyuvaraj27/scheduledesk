@@ -151,10 +151,12 @@ console.log("\n=== CASE 3: Combined THEORY — same faculty, same subject, two s
   ok("first entry (CSM-A DBMS Mon P1) placed", first.status === 201, first.json)
   const firstEntryId = first.json?.id
 
-  // The RAW placement attempt for CSM-B at the same hour, WITHOUT declaring a
-  // share, must still be refused — this is the exact "system currently
-  // blocks the second Ravi assignment" behaviour from the spec, and it is
-  // supposed to happen: an accidental double-booking must still fail.
+  // Both sections share the SAME home room in this fixture, so placing CSM-B
+  // -> DBMS -> Ravi at the same hour WITHOUT declaring a share still lands in
+  // the same room as CSM-A's entry — a real ROOM_CLASH, since nothing has
+  // been merged yet. (Same faculty + same subject is no longer a
+  // FACULTY_CLASH by itself — see Merge Classes / `sameSubjectTwin` — but
+  // landing in the same room untagged is still refused exactly as before.)
   const rawSecond = await post(`/sections/${secB.id}/entries`, {
     dayOfWeek: "MON",
     startPeriod: 1,
@@ -162,10 +164,28 @@ console.log("\n=== CASE 3: Combined THEORY — same faculty, same subject, two s
     subjectId: dbms.id,
   })
   ok(
-    "un-declared second placement is refused (409 FACULTY_CLASH)",
+    "un-declared second placement into the SAME room is refused (409 ROOM_CLASH, not FACULTY_CLASH)",
     rawSecond.status === 409 &&
-      rawSecond.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
+      rawSecond.json?.details?.some((d) => d.code === "ROOM_CLASH") &&
+      !rawSecond.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
     rawSecond.json
+  )
+
+  // But the same "twin" placed into a DIFFERENT room is a fully ordinary,
+  // independent placement now — no clash at all, no special step. This is
+  // the "Merge Classes" premise: build both normally first, merge later.
+  const roomTheory2 = (await post("/rooms", { name: "TZ-AFF2", type: "CLASSROOM" })).json
+  const twinDifferentRoom = await post(`/sections/${secB.id}/entries`, {
+    dayOfWeek: "MON",
+    startPeriod: 2,
+    entryType: "THEORY",
+    subjectId: dbms.id,
+    roomId: roomTheory2.id,
+  })
+  ok(
+    "same faculty + same subject in a DIFFERENT room, untagged, is an ordinary placement (201)",
+    twinDifferentRoom.status === 201,
+    twinDifferentRoom.json
   )
 
   // The availability grid must offer the "combine" option for exactly this
@@ -205,6 +225,8 @@ console.log("\n=== CASE 4: Combined LAB — same faculty, same subject, two sect
   ok("first LAB entry (CSM-A DBMS Lab Mon P5-7) placed", first.status === 201, first.json)
   const firstEntryId = first.json?.id
 
+  // Same lab room specified explicitly for both — still a real ROOM_CLASH
+  // (same room, untagged), not a FACULTY_CLASH (same subject exempts it now).
   const rawSecond = await post(`/sections/${secB.id}/entries`, {
     dayOfWeek: "MON",
     startPeriod: 5,
@@ -214,10 +236,28 @@ console.log("\n=== CASE 4: Combined LAB — same faculty, same subject, two sect
     periodSpan: 3,
   })
   ok(
-    "un-declared second LAB placement is refused (409 FACULTY_CLASH)",
+    "un-declared second LAB placement into the SAME lab is refused (409 ROOM_CLASH, not FACULTY_CLASH)",
     rawSecond.status === 409 &&
-      rawSecond.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
+      rawSecond.json?.details?.some((d) => d.code === "ROOM_CLASH") &&
+      !rawSecond.json?.details?.some((d) => d.code === "FACULTY_CLASH"),
     rawSecond.json
+  )
+
+  // The same LAB twin into a DIFFERENT lab room is ordinary, untagged, no
+  // clash — the LAB half of the "Step 1" premise.
+  const roomLab2 = (await post("/rooms", { name: "TZ-LAB2", type: "LAB" })).json
+  const twinDifferentLab = await post(`/sections/${secB.id}/entries`, {
+    dayOfWeek: "TUE",
+    startPeriod: 5,
+    entryType: "LAB",
+    subjectId: dbmsLab.id,
+    roomId: roomLab2.id,
+    periodSpan: 3,
+  })
+  ok(
+    "same faculty + same subject LAB in a DIFFERENT lab, untagged, is an ordinary placement (201)",
+    twinDifferentLab.status === 201,
+    twinDifferentLab.json
   )
 
   const combined = await post(`/sections/${secB.id}/entries`, {

@@ -320,6 +320,15 @@ model TimetableEntry {
   // so every clash rule behaves exactly as it did before.
   sharedSlotId String?
 
+  // The room this entry pointed at right before "Merge Classes" moved it
+  // into the merge's shared destination room. Set only while `sharedSlotId`
+  // is a Merge Classes tag; read back and cleared by Unmerge, which is what
+  // restores each section's original room. NULL for every entry that has
+  // never been through Merge Classes — including ordinary rows and rows
+  // combined via the older "combine at placement" flow, which never had a
+  // prior independent room to remember in the first place.
+  preMergeRoomId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

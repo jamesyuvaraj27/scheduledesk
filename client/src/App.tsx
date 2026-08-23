@@ -17,6 +17,7 @@ import { SectionBuilderPage } from "@/pages/SectionBuilderPage"
 import { SectionTimetablePage } from "@/pages/SectionTimetablePage"
 import { FacultyTimetablePage } from "@/pages/FacultyTimetablePage"
 import { RoomTimetablePage } from "@/pages/RoomTimetablePage"
+import { MergeClassesPage } from "@/pages/MergeClassesPage"
 import { ResetYearPage } from "@/pages/ResetYearPage"
 import { WorkingTimetablePage } from "@/pages/WorkingTimetablePage"
 import { PrintAllPage } from "@/pages/PrintAllPage"
@@ -88,6 +89,7 @@ function App() {
           />
           <Route path="rooms" element={<RoomTimetablePage />} />
           <Route path="rooms/:roomId/timetable" element={<RoomTimetablePage />} />
+          <Route path="merge" element={<MergeClassesPage />} />
           <Route path="faculty" element={<FacultyTimetablePage />} />
           <Route path="faculty/:facultyId" element={<FacultyTimetablePage />} />
           <Route path="working-timetable" element={<WorkingTimetablePage />} />

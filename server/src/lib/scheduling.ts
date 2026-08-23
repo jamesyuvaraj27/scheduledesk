@@ -192,29 +192,38 @@ function roomShareAllowed(
 }
 
 /**
- * May the SAME faculty member appear in both at the same time?
+ * Is this the SAME class reaching two sections at once — one teacher, one
+ * subject, taught to two sections in the same hour?
  *
- * Only when it is genuinely one class being taught once: same shared slot
- * AND the same subject. That extra `subjectId` test is the load-bearing part
- * of this whole feature.
+ * Unlike `roomShareAllowed`, this does NOT require a shared-slot tag. A
+ * teacher assigned the same subject to two different sections at the same
+ * hour is never a faculty clash, tagged or not — reconciling the ROOM is a
+ * separate, later, deliberate step ("Merge Classes" in `sharedSlots.ts`),
+ * not what makes the assignment itself legal. That is what lets both
+ * sections be placed as ordinary, independent entries first — even into two
+ * different rooms — which is the whole point: Merge Classes needs something
+ * already on the timetable to select and combine, not a decision made while
+ * placing the first one.
  *
- * Without it, tagging a slot would excuse every faculty clash inside it, so
+ * The `subjectId` match is still the load-bearing part. Without it this
+ * would excuse every faculty clash, so
  *
  *     AFF1 Mon P1: Ravi -> DBMS -> CSM-A
  *     AFF1 Mon P1: Ravi -> OS   -> CSM-B
  *
- * would save silently — one person timetabled to teach two different
- * subjects simultaneously. That is not a combined class and not a legal
- * shared room; it is a straightforward double-booking, and it stays blocked.
+ * would go through silently — one person timetabled to teach two different
+ * subjects simultaneously. That is not a combined class in the making; it is
+ * a straightforward double-booking, and it stays blocked. A null subjectId
+ * on either side never counts as a match either, so two activities with no
+ * subject at all (e.g. two Library hours) don't fall in here by accident —
+ * that case is handled separately, by `roomShareAllowed`'s tag, same as
+ * before.
  */
-function facultyShareAllowed(
-  a: { sharedSlotId?: string | null; subjectId?: string | null },
-  b: { sharedSlotId?: string | null; subjectId?: string | null }
+function sameSubjectTwin(
+  a: { subjectId?: string | null },
+  b: { subjectId?: string | null }
 ): boolean {
-  if (!sharesSlot(a, b)) return false
-  // A shared slot with no subject on either side (two sections at the same
-  // Library hour, say) is fine; two different subjects never is.
-  return (a.subjectId ?? null) === (b.subjectId ?? null)
+  return Boolean(a.subjectId) && a.subjectId === b.subjectId
 }
 
 /**
@@ -362,7 +371,7 @@ export function validatePlacement(
       entry.facultyId &&
       entry.facultyId === candidate.facultyId &&
       entry.sectionId !== candidate.sectionId &&
-      !facultyShareAllowed(candidate, entry)
+      !sameSubjectTwin(candidate, entry)
     ) {
       conflicts.push({
         code: "FACULTY_CLASH",
@@ -567,7 +576,67 @@ export function validateSection(
     }
   }
 
+  // Soft advisory: a faculty+subject "twin" across two sections (allowed —
+  // see `sameSubjectTwin` above) that is still sitting in two different
+  // rooms because nobody has run Merge Classes on it yet.
+  for (const msg of unmergedFacultyTwins(ctx.entries, ctx)) {
+    warnings.push(msg)
+  }
+
   return { subjects, activities, errors, warnings, valid: errors.length === 0 }
+}
+
+/**
+ * Faculty+subject "twins" — the same teacher assigned the same subject to
+ * two different sections at the same hour — that have not (yet) been
+ * reconciled into one room via Merge Classes.
+ *
+ * This is not a rule violation: `validatePlacement`/`sameSubjectTwin`
+ * deliberately allow a twin to exist in two different rooms, because Merge
+ * Classes needs something already on the timetable to select. But an
+ * un-merged twin means the teacher is nominally booked into two rooms at
+ * once, which is worth a soft nudge rather than staying invisible forever.
+ */
+export function unmergedFacultyTwins(
+  entries: PlacedEntry[],
+  ctx: Pick<SchedulingContext, "names" | "rooms">
+): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+
+  for (let i = 0; i < entries.length; i++) {
+    const a = entries[i]
+    if (!a.facultyId || !a.subjectId) continue
+    for (let j = i + 1; j < entries.length; j++) {
+      const b = entries[j]
+      if (a.sectionId === b.sectionId) continue
+      if (a.dayOfWeek !== b.dayOfWeek) continue
+      if (a.startPeriod !== b.startPeriod || a.periodSpan !== b.periodSpan) continue
+      if (a.facultyId !== b.facultyId || a.subjectId !== b.subjectId) continue
+      // Already merged (or otherwise already sharing this exact tag) — the
+      // whole point of the warning is to catch pairs that AREN'T yet.
+      if (a.sharedSlotId && a.sharedSlotId === b.sharedSlotId) continue
+      // Already in the same room, tag or not — nothing left to reconcile.
+      if ((a.roomId ?? null) === (b.roomId ?? null)) continue
+
+      const key = [a.id, b.id].sort().join(":")
+      if (seen.has(key)) continue
+      seen.add(key)
+
+      const facultyName = ctx.names?.faculty?.get(a.facultyId) ?? "A faculty member"
+      const subjectCode = ctx.names?.subjects?.get(a.subjectId) ?? "a subject"
+      const secA = ctx.names?.sections?.get(a.sectionId) ?? "one section"
+      const secB = ctx.names?.sections?.get(b.sectionId) ?? "another section"
+      const roomA = (a.roomId && ctx.rooms.get(a.roomId)?.name) || "no room"
+      const roomB = (b.roomId && ctx.rooms.get(b.roomId)?.name) || "no room"
+
+      out.push(
+        `${facultyName} teaches ${subjectCode} to ${secA} and ${secB} on ${a.dayOfWeek} period ${a.startPeriod} in different rooms (${roomA}, ${roomB}) — use Merge Classes to combine them.`
+      )
+    }
+  }
+
+  return out
 }
 
 export interface DailyLoad {

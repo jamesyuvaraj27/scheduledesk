@@ -6,6 +6,7 @@ import {
   computeAvailability,
   overlaps,
   facultyDailyLoad,
+  unmergedFacultyTwins,
   requiresNoRoom,
   type SchedulingContext,
   type PlacedEntry,
@@ -296,11 +297,17 @@ describe("clash detection", () => {
     assert.ok(codes(result).includes("SECTION_CLASH"))
   })
 
-  test("one faculty member cannot teach two sections at once", () => {
+  test("one faculty member cannot teach two DIFFERENT subjects to two sections at once", () => {
+    // Same subject would now be an allowed "twin" (see the combined-sections
+    // describe block below) — this test isolates the case that must still
+    // always be blocked: two different subjects, same person, same hour.
     const ctx = context({
       entries: [placed({ id: "other", sectionId: SEC_B, startPeriod: 3 })],
     })
-    const result = validatePlacement(theory({ startPeriod: 3 }), ctx)
+    const result = validatePlacement(
+      theory({ startPeriod: 3, subjectId: DBMS_LAB }),
+      ctx
+    )
     assert.ok(codes(result).includes("FACULTY_CLASH"))
     assert.match(result[0].message, /Sai Sir/)
     assert.match(result[0].message, /AIML-B/)
@@ -308,9 +315,17 @@ describe("clash detection", () => {
 
   test("faculty clash is detected across different years", () => {
     // Exactly the real scenario: 2nd year must fit around 3rd/4th year.
+    // Different subject, so this stays a real clash regardless of the
+    // same-subject "twin" exemption.
     const ctx = context({
       entries: [
-        placed({ id: "y4", sectionId: "sec-csm-4th", startPeriod: 6, facultyId: SAI }),
+        placed({
+          id: "y4",
+          sectionId: "sec-csm-4th",
+          startPeriod: 6,
+          facultyId: SAI,
+          subjectId: DBMS_LAB,
+        }),
       ],
     })
     const result = validatePlacement(theory({ startPeriod: 6 }), ctx)
@@ -414,13 +429,29 @@ describe("combined sections and shared rooms", () => {
       ]),
     })
 
-  test("untagged, this is still an ordinary double-booking", () => {
+  test("untagged twins in the SAME room still clash on the room", () => {
+    // Same teacher, same subject, same room, no tag: placing straight into
+    // the same room is still a real ROOM_CLASH — reaching one room together
+    // is exactly what Merge Classes (the tag) is for, not an accident.
     const result = validatePlacement(joiner(), twoSectionCtx([anchor()]))
-    assert.ok(
-      codes(result).includes("FACULTY_CLASH"),
-      "nothing may become a combined class by accident"
-    )
     assert.ok(codes(result).includes("ROOM_CLASH"))
+    assert.ok(
+      !codes(result).includes("FACULTY_CLASH"),
+      "same teacher + same subject is never a faculty clash by itself"
+    )
+  })
+
+  test("STEP 1 — untagged twins in DIFFERENT rooms are two ordinary, independent placements", () => {
+    // The whole premise of Merge Classes: both sections can be assigned the
+    // same subject/faculty at the same hour as plain, independent entries —
+    // no special action, no clash — as long as each has its own room. Only
+    // choosing to put them in the SAME room (above) or the same tag needs a
+    // deliberate step.
+    const result = validatePlacement(
+      joiner({ roomId: ROOM_205 }),
+      twoSectionCtx([anchor()])
+    )
+    assert.deepEqual(result, [])
   })
 
   test("CASE 1 — same teacher, same subject, two sections, one room is allowed", () => {
@@ -469,21 +500,24 @@ describe("combined sections and shared rooms", () => {
     assert.ok(codes(result).includes("SECTION_CLASH"))
   })
 
-  test("different tags are two unrelated classes, so still a clash", () => {
+  test("different tags don't excuse landing in the same ROOM", () => {
+    // Same subject/faculty exempts FACULTY_CLASH regardless of tags (see
+    // above) — but a mismatched tag still means nothing was agreed about
+    // sharing this ROOM, so that half of it stays blocked.
     const result = validatePlacement(
       joiner({ sharedSlotId: "some-other-slot" }),
       twoSectionCtx([anchor({ sharedSlotId: SLOT })])
     )
-    assert.ok(codes(result).includes("FACULTY_CLASH"))
+    assert.ok(!codes(result).includes("FACULTY_CLASH"))
     assert.ok(codes(result).includes("ROOM_CLASH"))
   })
 
-  test("a tag on one side only is not a share", () => {
+  test("a tag on one side only is not a share of the ROOM", () => {
     const result = validatePlacement(
       joiner({ sharedSlotId: SLOT }),
       twoSectionCtx([anchor({ sharedSlotId: null })])
     )
-    assert.ok(codes(result).includes("FACULTY_CLASH"))
+    assert.ok(!codes(result).includes("FACULTY_CLASH"))
     assert.ok(codes(result).includes("ROOM_CLASH"))
   })
 
@@ -670,9 +704,19 @@ describe("availability for the clash-blocked picker", () => {
     assert.ok(slots.every((s) => s.available))
   })
 
-  test("blocks exactly the slot where the faculty is busy", () => {
+  test("blocks exactly the slot where the faculty is busy with a DIFFERENT subject", () => {
+    // Different subject, so this is a real clash — same-subject twins are
+    // covered separately below, and are no longer blocked at all.
     const ctx = context({
-      entries: [placed({ id: "busy", sectionId: SEC_B, dayOfWeek: "WED", startPeriod: 4 })],
+      entries: [
+        placed({
+          id: "busy",
+          sectionId: SEC_B,
+          dayOfWeek: "WED",
+          startPeriod: 4,
+          subjectId: DBMS_LAB,
+        }),
+      ],
     })
     const slots = computeAvailability(
       { sectionId: SEC_A, periodSpan: 1, entryType: "THEORY", subjectId: ML, facultyId: SAI, roomId: ROOM_205 },
@@ -683,6 +727,21 @@ describe("availability for the clash-blocked picker", () => {
     assert.equal(blocked[0].dayOfWeek, "WED")
     assert.equal(blocked[0].startPeriod, 4)
     assert.equal(blocked[0].reasons[0].code, "FACULTY_CLASH")
+  })
+
+  test("does NOT block a same-subject twin in a different room", () => {
+    // The Merge Classes premise: this section's teacher already teaching
+    // the same subject to another section, in another room, at this hour is
+    // not a clash — it's exactly the state Merge Classes expects to find.
+    const ctx = context({
+      entries: [placed({ id: "busy", sectionId: SEC_B, dayOfWeek: "WED", startPeriod: 4 })],
+    })
+    const slots = computeAvailability(
+      { sectionId: SEC_A, periodSpan: 1, entryType: "THEORY", subjectId: ML, facultyId: SAI, roomId: ROOM_205 },
+      ctx
+    )
+    const blocked = slots.filter((s) => !s.available)
+    assert.equal(blocked.length, 0)
   })
 
   test("a 3-period lab is offered anywhere it fits in the day", () => {
@@ -840,3 +899,86 @@ describe("faculty daily load", () => {
     assert.equal(load.size, 0)
   })
 })
+
+describe("unmerged twin warning", () => {
+  const namesCtx = () =>
+    context({
+      names: {
+        faculty: new Map([[SAI, "Sai Sir"]]),
+        sections: new Map([
+          [SEC_A, "AIML-A"],
+          [SEC_B, "AIML-B"],
+        ]),
+        subjects: new Map([[ML, "ML"]]),
+      },
+    })
+
+  test("flags a same-subject twin sitting in two different rooms", () => {
+    const entries = [
+      placed({ id: "a", sectionId: SEC_A, roomId: ROOM_204 }),
+      placed({ id: "b", sectionId: SEC_B, roomId: ROOM_205 }),
+    ]
+    const msgs = unmergedFacultyTwins(entries, namesCtx())
+    assert.equal(msgs.length, 1)
+    assert.match(msgs[0], /Sai Sir/)
+    assert.match(msgs[0], /ML/)
+    assert.match(msgs[0], /Room 204/)
+    assert.match(msgs[0], /Room 205/)
+    assert.match(msgs[0], /Merge Classes/)
+  })
+
+  test("says nothing once the pair is tagged (merged)", () => {
+    const entries = [
+      placed({ id: "a", sectionId: SEC_A, roomId: ROOM_204, sharedSlotId: "tag-1" }),
+      placed({ id: "b", sectionId: SEC_B, roomId: ROOM_204, sharedSlotId: "tag-1" }),
+    ]
+    assert.deepEqual(unmergedFacultyTwins(entries, namesCtx()), [])
+  })
+
+  test("says nothing when the two are already in the same room untagged", () => {
+    // Shouldn't normally exist (ROOM_CLASH blocks it at placement), but the
+    // warning should not double up on it regardless.
+    const entries = [
+      placed({ id: "a", sectionId: SEC_A, roomId: ROOM_204 }),
+      placed({ id: "b", sectionId: SEC_B, roomId: ROOM_204 }),
+    ]
+    assert.deepEqual(unmergedFacultyTwins(entries, namesCtx()), [])
+  })
+
+  test("says nothing about a genuine different-subject clash", () => {
+    const entries = [
+      placed({ id: "a", sectionId: SEC_A, roomId: ROOM_204, subjectId: ML }),
+      placed({ id: "b", sectionId: SEC_B, roomId: ROOM_205, subjectId: DBMS_LAB }),
+    ]
+    assert.deepEqual(unmergedFacultyTwins(entries, namesCtx()), [])
+  })
+
+  test("surfaces through validateSection's warnings", () => {
+    const entries = [
+      ...fullWeekFixture(),
+      placed({ id: "twin", sectionId: SEC_B, roomId: ROOM_205, startPeriod: 1 }),
+    ]
+    const result = validateSection(SEC_A, context({ entries }))
+    assert.ok(result.warnings.some((w) => w.includes("Merge Classes")))
+  })
+})
+
+/** A section's timetable that fully satisfies its curriculum, for reuse. */
+function fullWeekFixture(): PlacedEntry[] {
+  return [
+    ...[1, 2, 3, 4].map((i) => placed({ id: `t${i}`, dayOfWeek: "MON", startPeriod: i })),
+    placed({
+      id: "lab",
+      dayOfWeek: "TUE",
+      startPeriod: 3,
+      periodSpan: 3,
+      entryType: "LAB",
+      subjectId: DBMS_LAB,
+      roomId: LAB_1,
+    }),
+    placed({ id: "lib", dayOfWeek: "WED", startPeriod: 1, entryType: "LIBRARY", subjectId: null, facultyId: null, roomId: null }),
+    placed({ id: "sem", dayOfWeek: "WED", startPeriod: 2, entryType: "SEMINAR", subjectId: null, facultyId: null, roomId: null }),
+    placed({ id: "cou", dayOfWeek: "WED", startPeriod: 3, entryType: "COUNSELING", subjectId: null, facultyId: null, roomId: null }),
+    placed({ id: "spo", dayOfWeek: "WED", startPeriod: 4, entryType: "SPORTS", subjectId: null, facultyId: null, roomId: null }),
+  ]
+}
