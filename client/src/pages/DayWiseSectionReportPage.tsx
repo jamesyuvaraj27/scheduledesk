@@ -31,6 +31,7 @@ export function DayWiseSectionReportPage() {
 
   const [day, setDay] = React.useState<Day | "">("")
   const [year, setYear] = React.useState<string>("")
+  const [department, setDepartment] = React.useState<string>("")
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
 
   // Land on the first working day and the first year that actually has
@@ -52,7 +53,15 @@ export function DayWiseSectionReportPage() {
   if (!data) return null
 
   const years = [...new Set(data.sections.map((s) => s.section.year))].sort((a, b) => a - b)
-  const sectionsForYear = year === "" ? [] : data.sections.filter((s) => String(s.section.year) === year)
+  const departments = [...new Set(data.sections.map((s) => s.section.department.code))].sort()
+  const sectionsForYear =
+    year === ""
+      ? []
+      : data.sections.filter(
+          (s) =>
+            String(s.section.year) === year &&
+            (department === "" || s.section.department.code === department)
+        )
   const selectedRows = sectionsForYear.filter((s) => selected.has(s.section.id))
 
   const toggleSection = (id: string) => {
@@ -68,6 +77,13 @@ export function DayWiseSectionReportPage() {
   // matches "no automatic show" for a year no one has chosen sections in yet.
   const changeYear = (value: string) => {
     setYear(value)
+    setSelected(new Set())
+  }
+
+  // Same reasoning as changeYear: narrowing to a department can drop
+  // sections that were checked, so the pick starts over.
+  const changeDepartment = (value: string) => {
+    setDepartment(value)
     setSelected(new Set())
   }
 
@@ -112,6 +128,23 @@ export function DayWiseSectionReportPage() {
                 {years.map((y) => (
                   <option key={y} value={y}>
                     {toRoman(y)} Year
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">
+                Department
+              </label>
+              <Select
+                value={department}
+                onChange={(e) => changeDepartment(e.target.value)}
+                className="w-40"
+              >
+                <option value="">All Departments</option>
+                {departments.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
                   </option>
                 ))}
               </Select>
